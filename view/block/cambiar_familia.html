@@ -1,0 +1,163 @@
+<script type="text/javascript">
+   $(document).ready(function() {
+      {if="isset($fsc->articulo)"}
+
+      $("select[name='codfamilia']").change(function(event) {
+         $(".new_atributo").remove();
+         if(this.value === "{$fsc->familia->codfamilia}") {
+            $(".atributo_familia").removeClass("hidden");
+            $(".atributo_familia select, .atributo_familia input").prop("disabled", false);
+         }
+         else {
+            $(".atributo_familia").addClass("hidden");
+            $(".atributo_familia select, .atributo_familia input").prop("disabled", true);
+
+            if(this.value) {
+               const buttons = $("button[type='submit']").prop("disabled", true);
+               return $.getJSON("index.php?page=atributos_familia&cod="+this.value+"&ajax=attr", function(data) {
+                  $("#atributos_familia").append(data.map(atributo => {
+                     // Si el atributo ya existe no lo añadimos
+                     let exists = $("[name='atrfam_"+atributo.id+"']");
+                     if(exists.length) {
+                        exists.prop("disabled", false);
+                        if(atributo.tipo === 1) {
+                           exists = exists.parent();
+                        }
+                        exists.parent().parent().removeClass("hidden");
+                        return '';
+                     }
+
+                     let html = '<div class="new_atributo col-sm-'+ (atributo.tipo === 2 || (atributo.tipo === 1 && atributo.nulos) ? '3' : '2' ) +'"><div class="form-group">'+ atributo.nombre;
+
+                     switch(atributo.tipo) {
+                        case 0:
+                           html += '<input class="form-control" type="number" name="atrfam_'+ atributo.id +'" '+ (atributo.nulos ? '' : 'required') +'/>';
+                           break;
+                        case 1:
+                           let valores_b = [{ cod:'TRUE', nombre:"Sí" },{ cod:'FALSE', nombre: "No" }];
+                           if(atributo.nulos) { valores_b.push({ cod: "", nombre: "Ninguno"}) }
+
+                           html +=  '<div class="form-control text-center">'+
+                                       valores_b.map(valor => '<label class="radio-inline"><input type="radio" name="atrfam_'+ atributo.id +'" value="'+ valor.cod +'" required>&nbsp;'+ valor.nombre +'</label>').join("")+
+                                    '</div>';
+                           break;
+                        case 2:
+                           let valores = atributo.valores;
+                           if(atributo.nulos) { valores.unshift({ cod: "", nombre: "Ninguno"}) }
+                           valores = valores.map(valor => '<option value="'+ valor.cod +'">'+ valor.nombre +'</option>');
+                           html +=  '<select class="form-control" name="atrfam_'+ atributo.id +'">'+
+                                       valores.join("")+
+                                    '</select>';
+                     }
+
+                     return html + "</div></div>"
+                  }))
+
+                  buttons.prop("disabled", false);
+               });
+            }
+         }
+      })
+
+      {else}
+
+      $("#btn_guardar").click(function(event) {
+         this.disabled=true;
+         event.preventDefault();
+         {if="property_exists($fsc,'articulos')"}
+         let oldfamilia = "{$fsc->familia->madre}";
+         let newfamilia = $('#s_madre').val();
+         {else}
+         let oldfamilia = "{$fsc->familia->codfamilia}";
+         let newfamilia = $('select[name="codfamilia"]').val();
+         {/if}
+         if(!oldfamilia)           oldfamilia = null;
+         if(newfamilia === "---")  newfamilia = null;
+         if(oldfamilia !== newfamilia {if="property_exists($fsc,'articulos')"}&& {function="count($fsc->articulos)"} > 0{/if}) {
+            
+            $(this).children("span").removeClass("glyphicon-floppy-disk glyphicon").addClass("fa fa-spinner fa-spin");
+
+            $.getJSON("index.php?page=atributos_familia&cod="+(oldfamilia || "")+"&ajax=diff&new="+(newfamilia || ""), difference => {
+               if(difference.atributos_nuevos.length || difference.atributos_perdidos.length) {
+                  if(difference.atributos_perdidos.length) { // Se están eliminando atributos, advertirlo
+                     $("#perdida_atributos").removeClass("hidden");
+                     const join_con_y = ([f,s,...rest]) => rest.length 
+                        ? f + ", " + join_con_y([s,...rest])
+                        : (s ? f + " y " + s : f);
+                     $("#perdida_atributos b").text(join_con_y(difference.atributos_perdidos.map(atributo => atributo.nombre)));
+                  }
+                  else {
+                     $("#perdida_atributos").addClass("hidden");
+                  }
+
+                  if(difference.atributos_nuevos.length) {
+                     $("#nuevos_atributos").removeClass("hidden");
+                     $("#nuevos_atributos>:not(.no_remove)").remove();
+                     $("#nuevos_atributos").append(difference.atributos_nuevos.map((atributo,i) => {
+                        html = '<div class="form-group"><label class="col-sm-2 col-sm-offset-1">'+atributo.nombre+'</label><div class="col-sm-9">';
+                        switch(+atributo.tipo) {
+                           case 0:
+                              html += '<input class="form-control" type="number" name="atrfam_'+atributo.idatributofamilia+'" value="" '+(atributo.permitirnulo ? '' : 'required')+'/>';
+                              break;
+                           case 1:
+                              html += (atributo.permitirnulo ? '<label class="radio-inline"><input type="radio" name="atrfam_'+atributo.idatributofamilia+'" value="" required>&nbsp;Ninguno</label>' : '')+'<label class="radio-inline"><input type="radio" name="atrfam_'+atributo.idatributofamilia+'" value="1" required>&nbsp;Sí</label><label class="radio-inline"><input type="radio" name="atrfam_'+atributo.idatributofamilia+'" value="0">&nbsp;No</label>';
+                              break;
+                           case 2:
+                              const valores = atributo.valores.map(valor => '<option value="'+valor.idvaloratributo+'">'+valor.nombre+'</option>').join("");
+                              html += '<select class="form-control" name="atrfam_'+atributo.idatributofamilia+'" '+(atributo.permitirnulo ? '><option value="">Ninguno</option>' : 'required>')+valores+'</select>';
+                        }
+                        return html+'</div></div>';
+                     }));
+                  }
+                  else {
+                     $("#nuevos_atributos").addClass("hidden");
+                  }
+
+                  this.disabled=false;
+                  $(this).children("span").addClass("glyphicon-floppy-disk glyphicon").removeClass("fa fa-spinner fa-spin");
+                  $('#modal_cambio_familia').modal();
+               }
+               else {
+                  this.form.submit();
+               }
+            });
+         }
+         else {
+            this.form.submit();
+         }
+      });
+
+      {/if}
+   });
+</script>
+
+<div class="modal form-horizontal" id="modal_cambio_familia">
+      <div class="modal-dialog">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+               <h4 class="modal-title">Información sobre cambio</h4>
+            </div>
+            <div class="modal-body">
+               <div class="hidden form-group" id="perdida_atributos">
+                  <div class="col-sm-12 text-left">
+                     <h6>Los atributos <b></b> ya no son heredados y su información en {if="property_exists($fsc,'articulos')"}los artículos de esta familia{else}este artículo{/if} se perderá.</h6>
+                  </div>
+               </div>
+               <div class="hidden" id="nuevos_atributos">
+                  <div class="col-sm-12 text-left form-group no_remove">
+                     <h6>Los siguientes atributos son ahora heredados y tienen que definirse sus valores para {if="property_exists($fsc,'articulos')"}los artículos de esta familia{else}este artículo{/if}.</h6>
+                  </div>
+               </div>
+            </div>
+            <div class="modal-footer">
+               <button class="btn btn-sm btn-default" data-dismiss="modal">
+                  Cancelar
+               </button>
+               <button class="btn btn-sm btn-danger" type="submit">
+                  <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Continuar
+               </button>
+            </div>
+         </div>
+      </div>
+   </div>

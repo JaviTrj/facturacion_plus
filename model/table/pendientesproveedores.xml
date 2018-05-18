@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tabla>
+    <columna>
+        <nombre>idpendiente</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+        <defecto>nextval('pendientesproveedor_idpendiente_seq'::regclass)</defecto>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>cantidad</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>idalbaran</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>pendientesproveedores_pkey</nombre>
+        <consulta>PRIMARY KEY (idpendiente)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_pendientesproveedores_articulos</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_pendientesproveedores_albaranesprov</nombre>
+        <consulta>FOREIGN KEY (idalbaran)
+            REFERENCES albaranesprov (idalbaran)
+            ON DELETE RESTRICT ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>uniq_pendientes</nombre>
+        <consulta>UNIQUE (referencia,idalbaran)</consulta>
+    </restriccion>
+</tabla>

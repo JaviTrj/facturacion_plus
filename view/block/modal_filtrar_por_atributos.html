@@ -1,0 +1,64 @@
+<div class="modal form-horizontal" id="modal_filtros_atributos_familia">
+   <div class="modal-dialog">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h4 class="modal-title">Filtros de atributos de familia</h4>
+         </div>
+         <div class="modal-body">
+            {loop="$fsc->atributos_familia"}
+            <div class="form-group">
+               <label class="col-sm-2 control-label">
+                  {$value->nombre}:
+               </label>
+               {if="$value->tipo == 0"}
+               <div class="col-sm-5 text-right">
+                  <input class="form-control" type="number" name="b_{$value->idatributofamilia}_min" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]['min'])"}value='{$fsc->b_atributos_familia[$value->idatributofamilia]['min']}'{/if} placeholder="Mínimo"/>
+               </div>
+               <div class="col-sm-5 text-right">
+                  <input class="form-control" type="number" name="b_{$value->idatributofamilia}_max" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]['max'])"}value='{$fsc->b_atributos_familia[$value->idatributofamilia]['max']}'{/if} placeholder="Máximo"/>
+               </div>
+               {elseif="$value->tipo == 1"}
+               <div class="col-sm-10">
+                  <label class="radio-inline">
+                     <input type="radio" name="b_{$value->idatributofamilia}" value="" {if="!isset($fsc->b_atributos_familia[$value->idatributofamilia])"}checked{/if}>
+                     &nbsp;Todos
+                  </label>
+                  <label class="radio-inline">
+                     <input type="radio" name="b_{$value->idatributofamilia}" value="1" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]) && $fsc->b_atributos_familia[$value->idatributofamilia] == '1'"}checked{/if}>
+                     &nbsp;Sí
+                  </label>
+                  <label class="radio-inline">
+                     <input type="radio" name="b_{$value->idatributofamilia}" value="0" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]) && !$fsc->b_atributos_familia[$value->idatributofamilia]"}checked{/if}>
+                     &nbsp;No
+                  </label>
+                  {if="$value->permitirnulo"}
+                  <label class="radio-inline">
+                     <input type="radio" name="b_{$value->idatributofamilia}" value="-1" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]) && $fsc->b_atributos_familia[$value->idatributofamilia] == '-1'"}checked{/if}>
+                     &nbsp;Solo nulos
+                  </label>
+                  {/if}
+               </div>
+               {else}
+               <div class="col-sm-10">
+                  <select class="form-control" name="b_{$value->idatributofamilia}">
+                     <option value="">Todos los valores</option>
+                     {if="$value->permitirnulo"}
+                     <option value="-1" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]) && $fsc->b_atributos_familia[$value->idatributofamilia] == '-1'"}selected{/if}>Solo nulos</option>
+                     {/if}
+                     {loop="$value->valores"}
+                     <option value="{$value2->idvaloratributo}" {if="isset($fsc->b_atributos_familia[$value->idatributofamilia]) && $value2->idvaloratributo == $fsc->b_atributos_familia[$value->idatributofamilia]"}selected{/if}>{$value2->nombre}</option>
+                     {/loop}
+                  </select>
+               </div>
+               {/if}
+            </div>
+            {/loop}
+         </div>
+         <div class="modal-footer">
+            <button type="submit" class="btn btn-sm btn-primary">
+               Buscar
+            </button>
+         </div>
+      </div>
+   </div>
+</div>

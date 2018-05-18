@@ -1,0 +1,1255 @@
+{include="header"}
+<style>
+   #table_valores th {
+      padding-bottom: 10px;
+   }
+   #table_valores td>span {
+      height: 50px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+   }
+   #table_valores ul {
+      padding: 0px;
+      margin: 0px;
+      min-height: 50px;
+   }
+   #table_valores li {
+      padding: 10px;
+      min-height: 50px;
+      width: 180px;
+      border-radius: 5px;
+      background-color: darkblue;
+      color: white;
+   }
+   #table_valores td:nth-child(3) {
+      border: 1px solid;
+   }
+   #valores_encontrados,.valores_relacionados {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-around;
+   }
+   .sortable-placeholder {
+      background-color: darkblue;
+      opacity: .5;
+      height: 50px;
+   }
+   #valores_encontrados>.too_long {
+      box-shadow: 0px 0px 8px 5px red inset;
+   }
+   #estado>.btn {
+      cursor: initial;
+   }
+   .modal-warning .modal-content {
+      background-color: orange;
+      color: white;
+   }
+   .modal-error .modal-content {
+      background-color: red;
+      color: white;
+   }
+   .modal {
+      overflow-y:auto;
+   }
+</style>
+<script type="text/javascript">
+   let relaciones = [];
+   const valores = {};
+   const cache_atributos = {};
+   let cols_contenido;
+   let elementos_creados;
+   $(document).ready(function() {
+      $("#valores_encontrados").sortable({
+         placeholder: "sortable-placeholder",
+         connectWith: "#valores_encontrados,.valores_relacionados"
+      }).disableSelection();
+      // Al abrirse el modal de relaciones, ver que valores usar mirando quien lo abrio
+      $("#modal_relaciones").on("show.bs.modal",function(event) {
+         const button = $(event.relatedTarget);
+         const row = getRowfromId(button.parent().parent().parent().parent());
+         $(this).data("row", row);
+         
+         const who = button.data('who');
+         let type;
+         let id;
+         let permitenulos;
+         if(who) {
+            const select = $("#col"+ row +">td:nth-child(4) select");
+            id = select.val();
+            const option = select.children("[value='"+ id +"']");
+            type = option.data("tipo") === 1 ? "bool" : "defvals";
+            permitenulos = option.data("nulos");
+
+            // Esconder añadir valores si es bool
+            if(type === "bool") {
+               $("#crear_valores").addClass("hidden");
+            }
+            else {
+               $("#crear_valores").removeClass("hidden");
+            }
+         }
+         else {
+            type = $("#col"+ row +">td:nth-child(2) select").val();
+
+            // Esconder añadir valores, ya que solo lo pueden hacer atributos
+            $("#crear_valores").addClass("hidden");
+         }
+
+         if(!relaciones[row] || relaciones[row].type !== type || ((type === 'defvals' || type === 'bool') && relaciones[row].id != id)) {
+            let valores_encontrados = get_unique_datos(row);
+            relaciones[row] = { type: type, store: { valores_encontrados: valores_encontrados.data }};
+            if(type === 'defvals' || type === 'bool') {
+               relaciones[row].id = id;
+            }
+            if(valores_encontrados.hay_nulos) {
+               relaciones[row].nulos = true;
+            }
+
+            $("#crear_valores_de_atributo").prop("checked", false);
+         }
+         else if(relaciones[row].crear_valores !== undefined) {
+            // Recordamos la opción de si crear nuevos valores para el atributo
+            $("#crear_valores_de_atributo").prop("checked", relaciones[row].crear_valores);
+         }
+         
+         // Ponemos los valores encontrados, 
+         $("#valores_encontrados").html(relaciones[row].store["valores_encontrados"].map(valor => 
+            "<li class='list-group-item'><span>"+escapeHtml(valor)+"</span></li>"
+         ));
+         $("#valores_encontrados").sortable("option", "update", (event,ui) => actualizar_relacion(row,event,ui));
+
+         const select2list = options => options.map(function() { return {cod:this.value, nombre:this.innerText }; }).get().filter(v => v.cod);
+         switch(type) {
+            case 'bool':
+               const opciones = [{nombre:'Sí',cod:'true'},{nombre:'No',cod:'false'}];
+               if(permitenulos) {
+                  opciones.push({nombre:'Nulo',cod:''});
+               }
+               setup_valores_modal(row, opciones);
+               break;
+            case 'defvals':
+               setup_valores_modal(row, (permitenulos ? [{nombre:'Nulo',cod:''}] : []).concat(valores[id]), relaciones[row].new_valores || []);
+               break;
+            case 'fab':
+               setup_valores_modal(row, [{nombre:'Nulo',cod:''}].concat(select2list($("#codfabricante>option"))));
+               break;
+            case 'fam':
+               setup_valores_modal(row, [{nombre:'Nulo',cod:''}].concat(select2list($("#codfamilia>option"))));
+               break;
+            case 'imp':
+               setup_valores_modal(row, select2list($("#codimpuesto>option")));
+               break;
+            case 't_precio':
+               setup_valores_modal(row, select2list($("#tipo_precio>option")));
+               break;
+         }
+      });
+
+      $("#modal_relaciones").on("hide.bs.modal",function(event) {
+         const row = $(this).data("row");
+         // Guardamos si se quieren crear valores
+         relaciones[row].crear_valores = $("#crear_valores_de_atributo").prop("checked");
+
+         // Guardamos los nuevos valores que se han creado
+         const input_groups = $("#relacion_valores .input-group");
+         if(input_groups.length) {
+            relaciones[row].new_valores = [];
+         }
+         input_groups.each(function() {
+            relaciones[row].new_valores.push({ cod: this.id.substr(9), nombre: $(this).children("input").val() })
+         });
+
+         check_column(row);
+      });
+
+      $("#crear_valores_de_atributo").change(function(event) {
+         if($(this).prop("checked")) {
+            const too_long = $("#valores_encontrados li").filter(function() {
+               return $(this).text().length > 30;
+            });
+            if(too_long.length) {
+               too_long.addClass("too_long");
+               $(this).parent().next().removeClass("hidden");
+            }
+         }
+         else {
+            $(".too_long").removeClass("too_long");
+            $(this).parent().next().addClass("hidden");
+         }
+      });
+
+      $('#b_procesar_fichero').click(function(event) {
+         const file = $("#csvfile").get(0).files[0];
+         if(!file) {
+            return;
+         }
+         $(this).prop("disabled",true);
+         $(this).children(".fa-file-text-o").addClass("hidden");
+         $(this).children(".fa-spinner").removeClass("hidden");
+         const reader = new FileReader();
+         reader.onload = function(event) { procesar_fichero(event.target.result); };
+         reader.readAsText(file);
+      });
+
+      $("#codfabricante").change(function(event) {
+         check_columns(2);
+      });
+
+      $("#codfamilia").change(function(event) {
+         check_columns(11);
+      });
+
+      $("#codimpuesto").change(function(event) {
+         check_columns(4);
+      });
+
+      $("#tipo_precio").change(function(event) {
+         check_columns(5);
+         is_margen_needed();
+      });
+
+
+      $("#b_cancelar").click(function(event) {
+         $("#b_procesar_fichero").prop("disabled",false);
+         $("#b_procesar_fichero .fa-file-text-o").removeClass("hidden");
+         $("#b_procesar_fichero .fa-spinner").addClass("hidden");
+         $("#datos_fichero").removeClass("hidden");
+         $("#config_articulos").addClass("hidden");
+      });
+
+      // Enviar la información para la creación de los artículos, primero comprueba algunos elementos
+      // globales y después prepara la parte visual y manda la información.
+      // En caso de ser más de 200 artículos, los va mandando en paquetes de dicho tamaño.
+      $("#b_proceder").click(function(event) {
+         if(!global_check()) {
+            return;
+         }
+         $(this).prop("disabled",true);
+         const progressBar = bootbox.dialog({
+            message: '<div class="text-center"><span>Creando...</span></div><div class="progress"><div id="progreso" class="progress-bar progress-bar-striped active" role="progressbar" style="width: 0%"></div></div>',
+            closeButton: false
+         });      
+         const info = preparar_envio_informacion();
+         let result = { exitos:0, fallos:0, errores:[], creados: { valores:[], articulos:[] } };
+         const enviar = data => {
+            const waiting = data.articulos.splice(200);
+            $.post({
+               url: "{$fsc->url()}&ajax=nuevos_articulos",
+               data: {data:data},
+               dataType: 'json',
+               success: response => {
+                  let total_procesados = result.exitos+result.fallos;
+                  // Mezclar los resultados de este paquete con los de los anteriores
+                  result = {
+                     exitos: result.exitos+response.exitos,
+                     fallos: result.fallos+response.fallos,
+                     errores: result.errores.concat(response.errores.map(error => { error.row += (error.row >= 0 ? total_procesados : 0); return error;})),
+                     creados: {
+                        valores: result.creados.valores.concat(Object.values(response.creados.valores).reduce((acc,it) => acc.concat(it),[])),
+                        articulos: result.creados.articulos.concat(response.creados.articulos)
+                     }
+                  };
+                  if(waiting.length) {
+                     // Ya que el primer paquete es el que manda los nuevos valores, hay que actualizar los que se van a mandar
+                     // posteriormente con los id de valor que se obtuvieron en dicho paquete.
+                     if(data.valores) {
+                        actualizar_envio_pendiente_con_valores(waiting, response.creados.valores);
+                     }
+
+                     total_procesados += response.exitos + response.fallos;
+                     $("#progreso").width(Math.round((total_procesados/(total_procesados+waiting.length))*100)+"%");
+                     enviar({articulos:waiting});
+                  }
+                  else {
+                     $(this).prop("disabled",false).html('Crear artículos');
+                     progressBar.modal("hide");
+                     elementos_creados = result.creados;
+                     mostrar_resultado(result);
+                  }
+               }
+            });
+         };
+         enviar(info);
+      });
+
+      $("#b_eliminar_todos").click(function(event) {
+         bootbox.confirm("¿Eliminar todos los artículos y valores creados?", result => {
+            if(result && (elementos_creados.valores.length || elementos_creados.articulos.length)) {
+               const dialog = bootbox.dialog({ message: '<div class="text-center"><i class="fa fa-spin fa-spinner"></i> Esperando confirmación...</div>' })
+               $.post({
+                  url: "{$fsc->url()}&ajax=eliminar_articulos_creados",
+                  data: {creados:elementos_creados},
+                  complete: () => dialog.modal("hide"),
+                  success: () => $("#modal_resultados").modal("hide"),
+                  error: () => {
+                     alert("No se pudieron eliminar todos los artículos. Puede intentarlo de nuevo.");
+                  }
+               });
+            }
+            else {
+               $("#modal_resultados").modal("hide");
+            }
+         });
+      });
+   });
+   function getRowfromId(o) {
+      return +o.attr("id").substr(3);
+   }
+   function escapeHtml(string) {
+      const entityMap = {
+         '&': '&amp;',
+         '<': '&lt;',
+         '>': '&gt;',
+         '"': '&quot;',
+         "'": '&#39;',
+         '/': '&#x2F;',
+         '`': '&#x60;',
+         '=': '&#x3D;'
+      };
+      return String(string).replace(/[&<>"'`=\/]/g, function (s) {
+         return entityMap[s];
+      });
+   }
+   function setup_valores_modal(row, valores_por_definir, added = undefined) {
+      const add_row = (cod,nombre,isNew) => {
+         const asignados = relaciones[row].store[cod];
+         return "<tr>"+
+            "<td>"+
+               (isNew ? "<div class='input-group' id='new_valor"+ cod +"'><input type='text' class='form-control' maxlength='30' value='"+nombre+"'><span class='input-group-btn'><button class='btn btn-danger' type='button'><i class='fa fa-trash' aria-hidden='true'></i></button></span></div>"
+               : "<span>"+nombre+"</span>")+
+            "</td>"+
+            "<td class='text-center'><i class='fa fa-arrows-h' aria-hidden='true'></i></td>"+
+            "<td>"+
+               "<ul id='"+cod+"' class='valores_relacionados'>"+
+                  (asignados ? asignados.map(asignado => "<li class='list-group-item'><span>"+escapeHtml(asignado)+"</span></li>").join("") : "")+
+               "</ul>"+
+            "</td>"+
+         "</tr>";
+      };
+      $("#relacion_valores").html(valores_por_definir.map(valor => add_row(valor.cod, valor.nombre, false)));
+      if(added) {
+         $("#relacion_valores").append(added.map((newOne,i) => add_row(newOne.cod, newOne.nombre, true)));
+
+         $("#relacion_valores").append("<tr><td><button id='new_valor' class='btn btn-success' style='width:100%'><span class='glyphicon glyphicon-plus'></span>&nbsp;Añadir valor</button></td><td></td><td style='border:none'></td>");
+         // Añadir un nuevo valor
+         $("#new_valor").click(function(event) {
+            let cod = $("#relacion_valores .input-group").last().attr("id");
+            cod = (cod ? +cod.substr(9) : 0)-1;
+            $(this).parent().parent().before(add_row(cod,"",true));
+
+            // Eliminarlo, quitando tanto lo almacenado en relacionado como los li
+            $("#new_valor"+cod+" button").click(function(event) {
+               if(relaciones[row].store[cod]) {
+                  relaciones[row].store["valores_encontrados"].push(...relaciones[row].store[cod]);
+                  relaciones[row].store[cod] = [];
+                  $("#valores_encontrados").prepend($("#"+cod).html());
+               }
+               $(this).parent().parent().parent().parent().remove();
+            });
+
+            // Convertir también en un sortable
+            $("#"+cod).sortable({
+               placeholder: "sortable-placeholder",
+               connectWith: "#valores_encontrados,.valores_relacionados",
+               update: (event,ui) => actualizar_relacion(row,event,ui)
+            });  
+         });
+      }
+
+      $(".valores_relacionados").sortable({
+         placeholder: "sortable-placeholder",
+         connectWith: "#valores_encontrados,.valores_relacionados",
+         update: (event,ui) => actualizar_relacion(row,event,ui)
+      });  
+   }
+   // Almacenamos un cambio realizado 
+   function actualizar_relacion(row, event, ui) { 
+      // Si nadie lo envia es el event del sortable que lo está perdiendo, con lo que eliminamos del almacén relaciones
+      if(!ui.sender) {
+         relaciones[row].store[event.target.id] = relaciones[row].store[event.target.id].filter(v => v !== ui.item.text());
+      }
+      else {
+         if(!relaciones[row].store[event.target.id]) {
+            relaciones[row].store[event.target.id] = [];
+         }
+         relaciones[row].store[event.target.id].push(ui.item.text());
+
+         if($("#valores_encontrados .too_long").length) {
+            $("#crear_valores_de_atributo").parent().next().removeClass("hidden");
+         } 
+         else {
+            $("#crear_valores_de_atributo").parent().next().addClass("hidden");
+         }
+      }
+   }
+   function add_opciones_atributo(col) {
+      $("#col"+col+">td:nth-child(3)").html("<select name='origen' class='form-control'>{loop="$fsc->familias"}<option value='{$value->codfamilia}'>{$value->descripcion}</option>{/loop}</select>");
+      // Gestionar la seleccion de la familia y la descarga de sus atributos para el siguiente select
+      $("#col"+col+">td:nth-child(3) select").change(function(event) {
+         const next = $("#col"+col+">td:nth-child(4)");
+         next.children().remove();
+         next.html('<i class="fa fa-spinner fa-spin" aria-hidden="true"></i>');
+         // Obtenemos los atributos y creamos el select
+         search_atributos_familia(this.value).done(atributos => {
+            atributos.forEach(atributo => {
+               valores[atributo.id] = atributo.valores;
+            });
+            // Crear el select y los options con los atributos
+            const get_nombre_tipo = atributo => atributo.tipo===2 ? "Valores" : (atributo.tipo ? "Binario" : "Númerico");
+            const options = atributos.map(atributo => "<option value='"+atributo.id+"' data-tipo='"+atributo.tipo+"' data-nulos='"+atributo.nulos+"' >"+atributo.nombre+" ("+get_nombre_tipo(atributo)+" "+(atributo.nulos ? " con" : " sin")+" nulos)</option>").join("");
+            next.html("<div class='input-group'><span class='input-group-btn'><button class='btn btn-success' type='button' data-toggle='modal' data-target='#modal_relaciones' data-who='1' title='Definir la relación entre los valores encontrados y los esperados'><i class='fa fa-arrows-h' aria-hidden='true'></i></button></span><select class='form-control' name='idatributofamilia'>"+options+"</select></div>");
+
+            // Si el atributo es binario o de valores, habilitar el botón de relaciones
+            const select = next.find("select");
+            select.change(function(event) {
+               const tipo = select.children("[value='"+this.value+"']").data("tipo") ;
+               if(tipo !== 0) {
+                  $(this).prev().children().prop("disabled",false);
+               }
+               else {
+                  $(this).prev().children().prop("disabled",true);
+               }
+
+               check_column(col);
+               // Comprobar de si con el cambio alguno ya no está repetido
+               check_columns(3);
+            });
+            select.trigger("change");
+         });
+      });
+      $("#col"+col+">td:nth-child(3) select").trigger("change");
+   }
+   function search_atributos_familia(codfamilia) {
+      if(cache_atributos[codfamilia]) {
+         return jQuery.Deferred().resolve(cache_atributos[codfamilia]);
+      }
+      return $.getJSON("index.php?page=atributos_familia&cod="+codfamilia+"&ajax=attr")
+         .done(data => {
+            cache_atributos[codfamilia] = data;
+         });
+   }
+   function procesar_fichero(contenido) {
+      cols_contenido = contenido.split(/\r?\n/).reduce((acc,row,i,arr) => {
+         if(acc && acc.error) {
+            return acc;
+         }
+         if(row === "") {
+            return i === arr.length-1 ? acc : false;
+         }
+         const row_data = row.match(/((".*?")|([^",]+)|,)(?=,|$)/g).map(a => a.replace(/(^("|,)|"$)/g,""));
+         return !acc
+            ? row_data.map(d => [d])
+            : (acc.length === row_data.length
+               ? acc.map((col,i) => { col.push(row_data[i]); return col; })
+               : { error: i+1 });
+      },undefined);
+
+      if(!cols_contenido || cols_contenido.error) {
+         if(cols_contenido.error) {
+            alert("Error al leer el fichero, el número de columnas no es consistente en la línea "+ cols_contenido.error);
+         }
+         else {
+            alert("Error al leer el fichero, fichero vacio");
+         }
+         const btn = $('#b_procesar_fichero');
+         btn.prop("disabled",false);
+         btn.children(".fa-file-text-o").removeClass("hidden");
+         btn.children(".fa-spinner").addClass("hidden");
+         return;
+      }
+
+      $("#datos_fichero").addClass("hidden");
+      $("#config_articulos").removeClass("hidden");
+      add_rows(cols_contenido.length);
+   }
+   function add_rows(how_many) {
+      relaciones = [];
+      $("#crear_valores_de_atributo").prop("checked",false);
+      $("#columnas *").remove();
+      for(let i = 1; i <= how_many; i++) {
+         $("#columnas").append("<tr id='col"+(i-1)+"'>"+
+            "<td><label class='control-label'><b>"+i+"</b></label></td>"+
+            "<td><div class='input-group'><span class='input-group-btn'><button class='btn btn-success' type='button' data-toggle='modal' data-target='#modal_relaciones' data-who='0' title='Definir la relación entre los valores encontrados y los esperados' disabled><i class='fa fa-arrows-h' aria-hidden='true'></i></button></span>"+
+               "<select class='form-control' name='correspondencia'>"+
+                  "<option value='ref'>Referencia</option>"+
+                  "<option value='desc'>Descripción</option>"+
+                  "<option value='precio'>Precio</option>"+
+                  "<option value='fab'>Fabricante</option>"+
+                  "<option value='fam'>Familia</option>"+
+                  "<option value='atr'>Atributo</option>"+
+                  "<option value='codbarras'>Código de barras</option>"+
+                  "<option value='imp'>Impuesto</option>"+
+                  "<option value='t_precio'>Tipo precio</option>"+
+                  "<option value='ign' selected>Ignorar</option>"+
+               "</select>"+
+            "</div></td>"+
+            "<td></td>"+
+            "<td></td>"+
+            "<td id='estado'><span class='glyphicon btn' aria-hidden='true'></span></td>"+
+            "</tr>");
+         relaciones.push(undefined);
+      }
+      for(let i = 0; i < how_many; i++) {
+         check_column(i);
+      }
+      $("#estado>span").click(function(event) {
+         const button = $(this);
+         if(button.data("code")) {
+            bootbox.dialog({
+               title: "Detalles "+(button.data("code") > 0 ? "del error" : "de la advertencia"),
+               message: button.attr("title"),
+               closeButton: true,
+               className: button.data("code") > 0 ? "modal-error" : "modal-warning"
+            });
+         }
+      });
+      // Gestionar el tipo de correspondencia
+      $("#columnas select[name='correspondencia']").change(function(event) {
+         const jqo = $(this);
+         const col = getRowfromId(jqo.parent().parent().parent());
+         $("#col"+col+">td:nth-child(3)>*,#col"+col+">td:nth-child(4)>*").remove();
+         if(jqo.val() == 'atr') {
+            add_opciones_atributo(col);
+         }
+         else {
+            const b_corresp = jqo.prev().children();
+            if(['fab','fam','imp','t_precio'].indexOf(jqo.val()) >= 0) {
+               b_corresp.prop("disabled",false);
+            }
+            else {
+               b_corresp.prop("disabled",true);
+            }
+         }
+         
+         is_margen_needed();
+
+         check_column(col);
+         // Miramos si algun error de tipo repeticion ya no se produce
+         check_columns(1);
+      });
+   }
+   function get_column_element(col, element_column) {
+      return $("#col"+col+">td:nth-child("+element_column+") "+(element_column === 5 ? "span" : "select"));
+   }
+   function get_all_columns_element(element_column) {
+      return $("#columnas td:nth-child("+element_column+") "+(element_column === 5 ? "span" : "select"));
+   }
+   function is_unique(element_column, value) {
+      return get_all_columns_element(element_column).filter(function() { return this.value === value}).length > 1;
+   }
+   // Comprueba si una columna es válida para ser transformada
+   // Si recibe error_code es para solo hacer una comprobación de si ese error se produce ahora
+   function check_column(i, error_code = undefined) {
+      const tipo = get_column_element(i, 2).val();
+      let error;
+      let error_pos;
+      let warning;
+      switch(tipo) {
+         case 'ref':
+            if(is_unique(2,'ref')) {
+               error = {code:1,message: "Solo puede haber una columna con la referencia del artículo"};
+               break;
+            }
+            if(error_pos = check_datos(i, { NO_PERMITIR_NULOS: true, MAX_LENGTH: 18 })) {
+               error = {code:10,message: "El dato de la fila " + error_pos + " no cumple los requisitos para ser una referencia"};
+               break;
+            }
+            break;
+         case 'desc':
+            if(is_unique(2,'desc')) {
+               error = {code:1,message: "Solo puede haber una columna con la descripción del artículo"};
+               break;
+            }
+            if(error_pos = check_datos(i, { NO_PERMITIR_NULOS: true })) {
+               error = {code:10,message: "El dato de la fila " + error_pos + " no puede ser una descripción ya que está vacio"};
+               break;
+            }
+            break;
+         case 'precio':
+            if(is_unique(2,'precio')) {
+               error = {code:1,message: "Solo puede haber una columna con el precio del artículo"};
+               break;
+            }
+            if(error_pos = check_datos(i, { DECIMAL: true })) {
+               error = {code:10,message: "El dato de la fila " + error_pos + " no es un número, con lo que no puede ser un precio"};
+               break;
+            }
+            break;
+         case 'fab':
+            if($("#codfabricante").val()) {
+               error = {code:2,message: "Si está definido el fabricante global, no puede haber una columna también definiendolo"};
+               break;
+            }
+            if(is_unique(2,'fab')) {
+               error = {code:1,message: "Solo puede haber una columna con el fabricante del artículo"};
+               break;
+            }
+            if(!relaciones[i] || relaciones[i].type !== "fab") {
+               warning = {code:-1,message: "No están definidas las relaciones entre valores, se ignorarán todos los valores encontrados"};
+               break;
+            }
+            if(relaciones[i].store["valores_encontrados"].length > 0) {
+               warning = {code:-1,message: (relaciones[i].store["valores_encontrados"].length) + " valores encontrados no están asignados, por lo que serán ignorados"};
+               break;
+            }
+            break;
+         case 'fam':
+            if(is_unique(2,'fam')) {
+               error = {code:1,message: "Solo puede haber una columna con la familia del artículo"};
+               break;
+            }
+            if(!relaciones[i] || relaciones[i].type !== "fam") {
+               warning = {code:-1,message: "No están definidas las relaciones entre valores, se ignorarán todos los valores encontrados"};
+               break;
+            }
+            if(relaciones[i].store["valores_encontrados"].length > 0) {
+               warning = {code:-1,message: (relaciones[i].store["valores_encontrados"].length) + " valores encontrados no están asignados, por lo que serán ignorados"};
+               break;
+            }
+            break;
+         case 'imp':
+            if($("#codimpuesto").val()) {
+               error = {code:4,message: "Si está definido el impuesto global, no puede haber una columna también definiendolo"};
+               break;
+            }
+            if(is_unique(2,'imp')) {
+               error = {code:1,message: "Solo puede haber una columna con el impuesto del artículo"};
+               break;
+            }
+            if(!relaciones[i] || relaciones[i].type !== "imp") {
+               error = {code:10,message: "No están definidas las relaciones entre valores, lo cual no es valido ya que no se permite no tener impuesto"};
+               break;
+            }
+            if(relaciones[i].store["valores_encontrados"].length > 0) {
+               error = {code:10,message: (relaciones[i].store["valores_encontrados"].length) + " valores encontrados no están asignados, lo cual no es válido ya que no se permite no tener impuesto"};
+               break;
+            }
+            break;
+         case 't_precio':
+            if($("#tipo_precio").val()) {
+               error = {code:5,message: "Si está definido el tipo de precio global, no puede haber una columna también definiendolo"};
+               break;
+            }
+            if(is_unique(2,'t_precio')) {
+               error = {code:1,message: "Solo puede haber una columna con el tipo de precio"};
+               break;
+            }
+            if(!relaciones[i] || relaciones[i].type !== "t_precio") {
+               error = {code:10,message: "No están definidas las relaciones entre valores, lo cual no es valido ya que no se permite no tener tipo de precio"};
+               break;
+            }
+            if(relaciones[i].store["valores_encontrados"].length > 0) {
+               error = {code:10,message: (relaciones[i].store["valores_encontrados"].length) + " valores encontrados no están asignados, lo cual no es válido ya que no se permite no tener tipo de precio"};
+               break;
+            }
+            break;
+         case 'codbarras':
+            if(is_unique(2,'codbarras')) {
+               error = {code:1,message: "Solo puede haber una columna con el código de barras"};
+               break;
+            }
+            if(error_pos = check_datos(i, { MAX_LENGTH: 18 })) {
+               error = {code:10,message: "El dato de la fila " + error_pos + " es demasiado largo para ser un código de barras"};
+               break;
+            }
+            break;
+         case 'atr':
+            // Comprueba que el atributo solamente está definido una vez
+            const atributo = get_column_element(i, 4);
+            if(is_unique(4,atributo.val())) {
+               error = {code:3,message: "Solo puede haber una columna con este atributo"};
+               break;
+            }
+            // Comprobar que la familia seleccionada es hija de la global
+            const familia = get_column_element(i, 3).val();
+            if($("#codfamilia").val()) {
+               if(!is_daughter_of_global(familia)) {
+                  error = {code:11,message: "La familia del atributo seleccionado no es hija del global"};
+                  break;
+               }
+            }
+            // Comprobar el atributo
+            const idatributo = atributo.val();
+            const option_atributo = atributo.children("[value='"+idatributo+"']");
+            const tipo_atributo = option_atributo.data("tipo");
+            const nulos_atributo = option_atributo.data("nulos");
+            if(tipo_atributo === 0) {
+               if((error_pos = check_datos(i, Object.assign({ INTEGER: true },!nulos_atributo ? { NO_PERMITIR_NULOS: true } : {})))) {
+                  error = {code:10,message: "El dato de la fila " + error_pos + " no es un entero, con lo que no puede ser un atributo númerico"};
+                  break;
+               }
+            }
+            else {
+               if(!relaciones[i] || (relaciones[i].type !== "defvals" && relaciones[i].type !== "bool")  || relaciones[i].id !== idatributo) {
+                  let message = "No están definidas las relaciones entre valores, se ignorarán todos los valores encontrados";
+                  if(nulos_atributo) {
+                     warning = {code: -1, message};
+                  }
+                  else {
+                     error = {code: 10, message};
+                  }
+                  break;
+               }
+               if(!nulos_atributo && relaciones[i].nulos) {
+                  error = {code:10,message: "El atributo no permite nulos y la columna tiene alguno"};
+                  break;
+               }
+               if(relaciones[i].new_valores && relaciones[i].new_valores.findIndex(a => !a.nombre) >= 0) {
+                  error = {code:10, message: "Hay algún valor añadido que no tiene nombre"};
+                  break;
+               }
+               if(!relaciones[i].crear_valores && relaciones[i].store["valores_encontrados"].length > 0) {
+                  let message = (relaciones[i].store["valores_encontrados"].length) + " valores encontrados no están asignados, por lo que serán considerados nulos";
+                  if(nulos_atributo) {
+                     warning = {code: -1, message};
+                  }
+                  else {
+                     error = {code: 10, message};
+                  }
+                  break;
+               }
+               if(relaciones[i].crear_valores && relaciones[i].store["valores_encontrados"].indexOf("") >= 0) {
+                  error = {code:10,message: "Hay un valor vacio entre los que encontrados que se van a crear"};
+                  break;
+               }
+            }
+      }
+      if(error_code && !error && !warning && get_column_element(i, 5).data("code") !== error_code) {
+         return;
+      }
+      if(error) {
+         get_column_element(i, 5)
+            .addClass("glyphicon-remove btn-danger")
+            .removeClass("glyphicon-ok btn-success glyphicon-warning-sign btn-warning")
+            .attr("title",error.message)
+            .data("code",error.code);
+      }
+      else if(warning) {
+         get_column_element(i, 5)
+            .addClass("glyphicon-warning-sign btn-warning")
+            .removeClass("glyphicon-ok btn-success glyphicon-remove btn-danger")
+            .attr("title",warning.message)
+            .data("code",warning.code);
+      }
+      else {
+         get_column_element(i, 5)
+            .addClass("glyphicon-ok btn-success")
+            .removeClass("glyphicon-remove btn-danger glyphicon-warning-sign btn-warning")
+            .attr("title","")
+            .data("code",0);
+      }
+      check_if_ready();
+   }
+   function check_columns(code) {
+      for(let i = 0; i < relaciones.length; i++) {
+         const row_code = get_column_element(i, 5).data("code");
+         if(code === row_code || row_code <= 0) {
+            check_column(i, code);
+         }
+      }
+   }
+   function check_datos(col, config) {
+      let functions_data_checker = Object.keys(config).map(key => {
+         switch(key) {
+            case 'NO_PERMITIR_NULOS':
+               return d => d !== "";
+            case 'MAX_LENGTH':
+               return d => d.length <= config[key];
+            case 'DECIMAL':
+               return d => !d || !isNaN(d);
+            case 'INTEGER':
+               return d => !d || (!isNaN(d) && Math.floor(d) === +d);
+            default:
+               console.error("Opción del comprobador de datos no permitidad");
+               return null;
+         }
+      });
+
+      const checker = (data, fs) => {
+         let error_index = false;
+         data.every((d,i) => {
+            if(!fs.every(f => f(d))) {
+               error_index = i + 1;
+               return false;
+            }
+            return true;
+         });
+         return error_index;
+      };
+      return checker(cols_contenido[col], functions_data_checker);
+   }
+   function get_unique_datos(col) {
+      let hay_nulos = false;
+      return {
+         data: cols_contenido[col].reduce((acc,value) => {
+            if(!value) {
+               hay_nulos = true;
+            } 
+            return acc.every(other => other !== value)
+               ? acc.concat([value])
+               : acc;
+         },[]),
+         hay_nulos
+      };
+   }
+   function check_if_ready() {
+      const isReady = get_all_columns_element(5).filter(function() {
+         return $(this).data("code") > 0;
+      }).length === 0;
+      if(isReady) {
+         $("#b_proceder").prop("disabled",false);
+      }
+      else {
+         $("#b_proceder").prop("disabled",true);
+      }
+   }
+   function exists_type(type_name) {
+      return get_all_columns_element(2).filter(function() { return this.value === type_name;}).length;
+   }
+   function is_margen_needed() {
+      if($("#tipo_precio").val() === "CES" || exists_type("t_precio")) {
+         $("#margen").parent().removeClass("hidden");
+      }
+      else {
+         $("#margen").parent().addClass("hidden");
+      }
+   }
+   function global_check() {
+      const margen = $("#margen");
+      if(!margen.parent().hasClass("hidden") && !margen.val()) {
+         bootbox.alert("Valor del margen incorrecto");
+         return false;
+      }
+ 
+      if(!exists_type("desc")) {
+         bootbox.alert("Para crear un artículo tiene que haber como mínimo una columna con la descripción");
+         return false;
+      }
+      if(exists_type("atr") && $("#codfamilia").val() === '' && !exists_type("fam")) {
+         bootbox.alert("Si se definen atributos tiene que especificarse una familia global o una columna con la familia del artículo");
+         return false;
+      }
+      if(!$("#codimpuesto").val() && !exists_type("imp")) {
+         bootbox.alert("Tiene que definirse el impuesto, ya sea para todos o estableciendo una columna para ello");
+         return false;
+      }
+      if(!$("#tipo_precio").val() && !exists_type("t_precio") && exists_type("precio")) {
+         bootbox.alert("Tiene que definirse el tipo de precio, ya sea para todos o estableciendo una columna para ello");
+         return false;
+      }
+
+      return true;
+   }
+   function is_daughter_of_global(familia) {
+      const global_select = $("#codfamilia");
+      const familia_global = global_select.val();
+      const get_mother = value => global_select.children("[value='"+value+"']").data("madre");
+      let current = familia, mother;
+      if(current === familia_global) {
+         return true;
+      }
+      while(current) {
+         mother = get_mother(current);
+         if(mother === familia_global) {
+            return true;
+         }
+         current = mother;
+      }
+      return false;
+   }
+   function preparar_envio_informacion() {
+      const valores_para_crear = relaciones.reduce((acc,relacion,index) => {
+         if(!relacion || (!relacion.crear_valores && !relacion.new_valores)) {
+            return acc;
+         }
+         let new_valores = [];
+         // Añadimos los valores observados restantes si se tiene activada la opción para ello
+         if(relacion.crear_valores) {
+            new_valores = relacion.store['valores_encontrados'].map(v => v.substr(0,30));
+         }
+         if(relacion.new_valores) {
+            // Buscamos valores añadidos, cambiandole el indice para que se pueda saber su posición en el 
+            // futuro array de valores creados, aunque se mantiene que sea negativo para que se pueda detectar
+            // que es diferente
+            relacion.store = Object.keys(relacion.store).reduce((acc,key) => {
+               let newKey = key;
+               if(!isNaN(key) && +key < 0) {
+                  const newOne = relacion.new_valores.find(a => a.cod === key);
+                  newKey = -(new_valores.push(newOne.nombre) - 1);
+               }
+               return Object.assign(acc, { [newKey]: relacion.store[key]});
+            },{});
+         }
+         return Object.assign(acc, { [get_column_element(index, 4).val()]: new_valores });
+      }, {});
+
+      let hay_fabricante_individual = false;
+      const col_transformer = relaciones.map((relacion,index) => {
+         // Devuelve el valor esperado a partir de un valor encontrado mirando la relación
+         // En caso de tener que preparar_para_crear un nuevo valor, envolverlo en un objecto con la posición en el arrary de no asignados
+         const get_valor = (encontrado, preparar_para_crear = false) => {
+            return Object.keys(relacion.store).filter(name => name.length).reduce((acc,existente) => {
+               if(acc) {
+                  return acc;
+               }
+               if(existente === 'valores_encontrados') {
+                  if(!preparar_para_crear) {
+                     return acc;
+                  }
+               }
+               const i = relacion.store[existente].indexOf(encontrado);
+               if(i >= 0) {
+                  if(existente === 'valores_encontrados') return { valor_encontrado: i };
+                  if(+existente <= 0)                      return { valor_encontrado: -existente };
+                  return existente;
+               }
+               return acc;
+            }, undefined);
+         };
+
+         const adder = (property_name,search_valor = false) => (property_value, o) => {
+            let data = property_value;
+            if(search_valor) {
+               data = get_valor(property_value);
+               if(!data) {
+                  return o;
+               }
+            }
+            return Object.assign(o, { [property_name]: data });
+         };
+         // Para cada tipo crear una función que toma un valor encontrado y un objeto, y devuelve el objecto con el valor añadido
+         switch(get_column_element(index, 2).val()) {
+            case 'ref':
+               return adder('referencia');
+            case 'desc':
+               return adder('descripcion');
+            case 'precio':
+               return adder('pvp');
+            case 'fab':
+               hay_fabricante_individual = true;
+               return adder('codfabricante', true);
+            case 'fam':
+               return adder('codfamilia', true);
+            case 'imp':
+               return adder('codimpuesto', true);
+            case 't_precio':
+               return adder('tipo_precio', true);
+            case 'codbarras':
+               return adder('codbarras');
+            case 'atr':
+               const atributo = get_column_element(index, 4);
+               const idatributo = atributo.val();
+               const tipo = atributo.children("[value='"+idatributo+"']").data("tipo");
+               return (atributo, o) => {
+                  const new_atributos = {[idatributo]: atributo };
+                  if(tipo !== 0) {
+                     const valor = get_valor(atributo, relacion ? relacion.crear_valores : false);
+                     if(!valor) {
+                        return o;
+                     }
+                     new_atributos[idatributo] = valor;
+                  }
+                  return Object.assign(o, { atributos: Object.assign({}, o.atributos, new_atributos) });
+               }
+            case 'ign':
+               return (d, o) => o;
+         }
+      });
+
+      // Añadir un transformador para el fabricante, la familia, el impuesto y tipo de precio globales
+      const fab = $("#codfabricante").val();
+      if(fab && !hay_fabricante_individual) {
+         col_transformer.push(o => Object.assign(o, {codfabricante: fab}));
+      }
+      const fam = $("#codfamilia").val();
+      if(fam) {
+         col_transformer.push(o => Object.assign({codfamilia: fam}, o));         
+      }
+      const imp = $("#codimpuesto").val();
+      if(imp) {
+         col_transformer.push(o => Object.assign({codimpuesto: imp}, o));         
+      }
+      const t_precio = $("#tipo_precio").val();
+      if(t_precio) {
+         if(t_precio === "CES") {
+            const margen = $("#margen").val();
+            col_transformer.push(o => {
+               if(o.pvp) {
+                  o.preciocoste = o.pvp;
+                  o.pvp = o.pvp * (1 + margen/100);
+               }
+               return o;
+            });
+         }
+         else if(t_precio === "CON") {
+            col_transformer.push(o => Object.assign({tipo_precio: t_precio}, o));
+         }         
+      }
+      // Si hay una columna con el tipo de precio añadir un transformador
+      else if(exists_type("t_precio")) {
+         const margen = $("#margen").val();
+         col_transformer.push(o => {
+            if(o.tipo_precio === "CES" && o.pvp) {
+               o.preciocoste = o.pvp;
+               o.pvp = o.pvp * (1 + margen/100);
+            }
+            return o;
+         });
+      }
+
+      // Si hay una columna definiendo la familia, añadir un transformador que elimina
+      // los atributos que no le pertenecen porque son de una familia hija
+      if(exists_type('fam')) {
+         col_transformer.push(o => {
+            if(o.atributos) {
+               o.atributos = Object.keys(o.atributos).reduce((acc,id) =>
+                  cache_atributos[o.codfamilia].find(atrfamilia => id === atrfamilia.id)
+                     ? Object.assign(acc, {[id]: o.atributos[id]})
+                     : acc
+               , {});
+            } 
+            return o;
+         })
+      }
+
+      const build_objects = cols => {
+         let result = [];
+         for(let i = 0; i < cols[0].length; i++) {
+            result.push(col_transformer.reduce((acc,f,j) => j < cols.length ? f(cols[j][i],acc) : f(acc), {}));
+         }
+         return result;
+      };
+      return {
+         valores: valores_para_crear,
+         articulos: build_objects(cols_contenido)
+      }
+   }
+   function mostrar_resultado(resultado) {
+      $("#b_procesar_fichero").prop("disabled",false);
+      $("#b_procesar_fichero .fa-file-text-o").removeClass("hidden");
+      $("#b_procesar_fichero .fa-spinner").addClass("hidden");
+      $("#datos_fichero").removeClass("hidden");
+      $("#config_articulos").addClass("hidden");
+      $("#modal_resultados").modal();
+      $("#resultados_ok").val(resultado.exitos);
+      $("#resultados_fails").val(resultado.fallos);
+      if(resultado.errores.length) {
+         $("#resultado_errores").parent().removeClass("hidden");
+         $("#resultado_errores").html(resultado.errores.map(error =>
+            "<tr><td>"+error.row+"</td><td>"+(Array.isArray(error.message) ? error.message.join("<br>") : error.message)+"</td></tr>"
+         ));
+      }
+      else {
+         $("#resultado_errores").parent().addClass("hidden");
+      }
+   }
+   function actualizar_envio_pendiente_con_valores(articulos, valores) {
+      articulos.forEach(articulo => {
+         if(articulo.atributos) {
+            Object.keys(articulo.atributos).forEach(idatributo => {
+               if(typeof articulo.atributos[idatributo] === "object") {
+                  articulo.atributos[idatributo] = valores[idatributo][articulo.atributos[idatributo].valor_encontrado];
+               }
+            });
+         }
+      });
+   }
+</script>
+
+<div class="container-fluid">
+   <div class="panel panel-default">
+      <div class="panel-heading text-center">
+         <h4><b>Configure la forma de transformar el fichero CSV en artículos</b></h4>
+      </div>
+      <div class="panel-body form-horizontal" id="datos_fichero">
+         <div class="form-group">
+            <label class="col-sm-2 control-label">Fichero:</label>
+            <div class="col-sm-4">
+               <input id="csvfile" class="form-control" type="file" name="fichero" accept=".csv" required>
+               <span class="help-block">El fichero tiene que estar codificado en UTF-8, en caso contrario las tildes no se leerán correctamente.</span>
+            </div>
+            <button type="button" class="btn btn-primary" id="b_procesar_fichero">
+               <i class="fa fa-spinner fa-spin hidden" aria-hidden="true"></i>
+               <i class="fa fa-file-text-o" aria-hidden="true"></i>
+               &nbsp;Procesar
+            </button>
+         </div>
+      </div>
+      <div id="config_articulos" class="hidden">
+         <div class="panel-body form-horizontal">
+            <div class="form-group">
+               <label class="col-sm-2 control-label">Fabricante:</label>
+               <div class="col-sm-4">
+                  <select class="form-control" id="codfabricante">
+                     <option value="" selected>Definido por cada artículo</option>
+                     {loop="$fsc->fabricantes"}
+                     <option value="{$value->codfabricante}">{$value->nombre}</option>
+                     {/loop}
+                  </select>
+               </div>
+               <label class="col-sm-2 control-label">Familia:</label>
+               <div class="col-sm-4">
+                  <select class="form-control" id="codfamilia">
+                     <option value="" selected>Definido por cada artículo</option>
+                     {loop="$fsc->familias"}
+                     <option value="{$value->codfamilia}" data-madre="{$value->madre}">{$value->descripcion}</option>
+                     {/loop}
+                  </select>
+                  <span class="help-block">Aunque se seleccione una familia, puede haber una columna para la familia siempre y cuando los artículos tengan familias hijas.</span>
+               </div>      
+            </div>
+            <div class="form-group">
+               <label class="col-sm-2 control-label">Impuesto:</label>
+               <div class="col-sm-4">
+                  <select class="form-control" id="codimpuesto">
+                     <option value="" selected>Definido por cada artículo</option>
+                     {loop="$fsc->impuestos"}
+                     <option value="{$value->codimpuesto}">{$value->descripcion}</option>
+                     {/loop}
+                  </select>
+               </div>
+               <label class="col-sm-2 control-label">Tipo de precio:</label>
+               <div class="col-sm-4">
+                  <select class="form-control" id="tipo_precio">
+                     <option value="">Definido por cada artículo</option>
+                     <option value="SIN" selected>Sin impuesto</option>
+                     <option value="CON">Con impuesto</option>
+                     <option value="CES">Coste</option>
+                  </select>
+                  <div class="input-group hidden">
+                     <input type="number" class="form-control" id="margen">
+                     <span class="input-group-addon">% Margen</span>
+                  </div>
+               </div>
+            </div>
+         </div>
+         <table class="table table-striped table-hover">
+            <thead>
+               <tr>
+                  <th style="width: 50px">
+                  </th>
+                  <th class="text-center">
+                     Correspondencia de la columna
+                  </th>
+                  <th class="text-center" style="width: 25%">
+                     
+                  </th>
+                  <th class="text-center" style="width: 25%">
+                     
+                  </th>
+                  <th style="width: 50px"></th>
+               </tr>
+            </thead>
+            <tbody id="columnas">
+            </tbody>
+         </table>
+         <div class="panel-body">
+            <span class="help-block" style="display:inline-block;">Al pulsar sobre un botón de error o precaución puede ver su motivo.</span>
+            <div class="pull-right">
+               <button type="button" class="btn btn-danger" id="b_cancelar">Cancelar</button>
+               <button type="button" class="btn btn-success" id="b_proceder" disabled>Crear artículos</button>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+
+<div class="modal fade" id="modal_relaciones">
+   <div class="modal-dialog">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title">Establezca la relación entre valores esperados y encontrados</h4>
+         </div>
+         <div class="modal-body">
+            <span class="help-block">Arrastre los valores encontrados sobre los cuadros de los valores relacionados correspondientes a su valor esperado.</span>
+            <table id="table_valores" style="width:100%">
+               <thead>
+                  <tr>
+                     <th class="text-center" style="width: 40%">
+                        Valores esperados
+                     </th>
+                     <th style="width: 20%"></th>
+                     <th class="text-center" style="width: 40%">
+                        Valores relacionados
+                     </th>
+                  </tr>
+               </thead>
+               <tbody id="relacion_valores">
+               </tbody>
+               <thead>
+                  <tr>
+                     <th class="text-center" colspan="2" style="padding-top: 20px">
+                        Valores encontrados
+                     </th>
+                     <th>
+                        <label class="checkbox-inline hidden" style="padding-top: 20px" id="crear_valores">
+                           <input type="checkbox" id="crear_valores_de_atributo">
+                           Crear valores con los que quedan
+                        </label>
+                        <span class="help-block hidden">Los encontrados marcados son demasiado largos, serán recortados al añadirse</span>
+                     </th>
+                  </tr>
+               </thead>
+               <tbody>
+                  <tr>
+                     <td colspan="3">
+                        <ul id="valores_encontrados">
+                           
+                        </ul>
+                     </td>
+                  </tr>
+               </tbody>
+            </table>
+         </div>
+      </div>
+   </div>
+</div>
+
+<div class="modal fade" id="modal_resultados">
+   <div class="modal-dialog">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title">Resultado de la creación de los artículos</h4>
+         </div>
+         <div class="modal-body">
+            <div class="row">
+               <label class="col-sm-9" style="height: 39px;line-height: 39px;"><b>Número de artículos creados satifastoriamente: </b></label>
+               <div class="col-sm-3">
+                  <input class="form-control pull-right" type="number" id="resultados_ok" readonly>
+               </div>
+            </div>
+            <div class="row">
+               <label class="col-sm-9" style="height: 39px;line-height: 39px;"><b>Número de artículos que no se pudieron crear: </b></label>
+               <div class="col-sm-3">
+                  <input class="form-control pull-right" type="number" id="resultados_fails" readonly>
+               </div>
+            </div>
+         </div>
+         <div class="modal-footer">
+               <button type="button" class="btn btn-danger" id="b_eliminar_todos">Eliminar todo lo creado</button>
+               <button type="button" class="btn btn-primary" data-dismiss="modal">Finalizar</button>
+            </div>
+         <table class="table table-striped hidden">
+            <thead>
+               <tr>
+                  <th>
+                     Número fila
+                  </th>
+                  <th>
+                     Información
+                  </th>
+               </tr>
+            </thead>
+            <tbody id="resultado_errores">
+
+            </tbody>
+         </table>
+      </div>
+   </div>
+</div>
+{include="footer"}

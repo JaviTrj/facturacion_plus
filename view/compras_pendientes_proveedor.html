@@ -1,0 +1,250 @@
+{include="header2"}
+<style>
+   .up-caret {
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 4px solid;
+      display: inline-block;
+      height: 0;
+      width: 0;
+   }
+   .sortable_col.text-center>div {
+      margin-left: 5px;
+   }
+   .up-caret,.caret {
+      display: none !important;
+   }
+   .sortable_col .up-caret,.sortable_col .caret {
+      display: block !important;
+      margin: 2px 0;
+   }
+   .sortable_col {
+      cursor: pointer;
+   }
+   .sortedAsc .up-caret {
+      border-bottom-color: red;
+   }
+   .sortedDesc .caret {
+      border-top-color: red;
+   }
+}
+</style>
+<script type="text/javascript">
+   let pendientes = undefined;
+   let total = 0;
+   let agrupar = false;
+   let ordenar = false;
+   const multialmacen = {if="$fsc->multialmacen"}true{else}false{/if};
+   $(document).ready(function() {
+      $.getJSON("{$fsc->url()}&ajax=0", function(data) {
+         if(data) {
+            pendientes = data;
+            console.log(pendientes);
+            total = round(pendientes.reduce((acc,row) => acc+row[multialmacen ? 8 : 7], 0));
+            agrupar = $("#agrupar_articulos").prop("checked");
+            mostrar_pendientes();
+         }
+      });
+      $("#agrupar_articulos").change(function(event) {
+         if(pendientes) {
+            agrupar = $(this).prop("checked");
+            if(agrupar) {
+               $("#col_2,#col_3"+(multialmacen ? ",#col_4" : "")).off('click').removeClass("sortable_col");
+            }
+            else {
+               $("#col_2,#col_3"+(multialmacen ? ",#col_4" : "")).click(onSortingClick).addClass("sortable_col");
+            }
+            ordenar = false;
+            $(".sortable_col").removeClass("sortedDesc sortedAsc");
+            mostrar_pendientes();
+         }
+      });
+      $(".sortable_col").hover(
+         function() { $(this).addClass("active"); },
+         function() { $(this).removeClass("active"); }
+      );
+      $(".sortable_col").click(onSortingClick);
+   });
+   function onSortingClick() {
+      const header = $(this);
+      ordenar = { col: +this.id.substr(4), dir: true };
+      if(!header.hasClass("sortedAsc") && !header.hasClass("sortedDesc")) {
+         $(".sortable_col").removeClass("sortedDesc sortedAsc");
+         header.addClass("sortedAsc");
+      }
+      else if(header.hasClass("sortedDesc")) {
+         header.addClass("sortedAsc");
+         header.removeClass("sortedDesc");
+      }
+      else {
+         ordenar.dir = false;
+         header.removeClass("sortedAsc");
+         header.addClass("sortedDesc");
+      }
+      mostrar_pendientes();
+   }
+   function agrupar_lista(lista) {
+      if(!agrupar) {
+         return lista;
+      }
+      const agrupados = lista.reduce((agrupados,row) => {
+            if(agrupados[row[0]]) agrupados[row[0]].push(row);
+            else agrupados[row[0]] = [row];
+            return agrupados;
+         }, {});
+      return Object.keys(agrupados).reduce((acc,key) => {
+         let lista = agrupados[key];
+         let agrupamiento = Object.assign([],lista[0]);
+         agrupamiento[multialmacen ? 5 : 4] = round(lista.reduce((acc,pendiente) => acc + +pendiente[multialmacen ? 5 : 4], 0));
+         agrupamiento[multialmacen ? 8 : 7] = round(lista.reduce((acc,pendiente) => acc + +pendiente[multialmacen ? 8 : 7], 0));
+         agrupamiento[2] = undefined;
+         agrupamiento[3] = undefined;
+         if(multialmacen) { agrupamiento[4] = undefined;}
+         acc.push(agrupamiento);
+         return acc;
+      }, []);
+   }
+   function fecha2milisegundos(fecha) {
+      const dividido = fecha.split("-");
+      return new Date(+dividido[2]-1,+dividido[1]-1,dividido[0]);
+   }
+   function ordenar_lista(lista) {
+      if(!ordenar) {
+         return lista;
+      }
+      return lista.sort((rowA,rowB) => {
+         let a = rowA[ordenar.col],b = rowB[ordenar.col];
+         if(ordenar.col == 3) { // Si es fecha convertir a milisegundos 
+            a = fecha2milisegundos(a);
+            b = fecha2milisegundos(b);
+         }
+         const cmp = isNaN(a) ? a.localeCompare(b) : a - b;
+         console.log(a + " vs " + b + " cmp " + cmp)
+         return ordenar.dir ? cmp : -cmp;
+      });
+   }
+   function getHTML(lista) {
+      if(lista.length) {
+         return lista.map(row => {
+            return '<tr><td class="text-left"><a href="index.php?page=ventas_articulo&ref='+row[0]+'" target="_top">'+row[0]+'</a></td><td class="text-center">'+row[1]+
+               '</td><td class="text-center" title="Albarán del pedido en el se quedo pendiente">'+(row[2] ? '<a href="index.php?page=compras_albaran&id='+row[2]+'" target="_top">'+row[2]+'</a>' : '-')+
+               '</td><td class="text-center">'+(row[3] ? row[3] : '-')+'</td><td class="text-center">'+(row[4] ? row[4] : '-')+'</td></td><td class="text-center">'+row[5]+'</td>'+
+               '</td><td class="text-center">'+row[6]+'</td></td><td class="text-center">'+row[7]+'</td>'+(multialmacen ? '<td class="text-center">'+row[8]+'</td>' : '')
+               '</tr>';
+         }) + '<tr><td colspan="{if="$fsc->multialmacen"}8{else}7{/if}"/><td class="text-center"><b>'+total+'</b></td></tr>';
+      }
+      return "<tr class='warning'><td colspan='"+(multialmacen ? 9 : 8)+"'>No artículos pendientes para este proveedor</td></tr>";
+   }
+   function mostrar_pendientes() {
+      if(pendientes) {
+         $("#articulos_pendientes").html(getHTML(ordenar_lista(agrupar_lista(pendientes))));
+      }
+   }
+   function set_agrupar(valor) {
+      agrupar = valor;
+      mostrar_pendientes();
+   }
+   function set_ordenar(valor) {
+      ordenar = valor;
+      mostrar_pendientes();
+   }
+   function round(number,precision=2) {
+      return Math.round(number*Math.pow(10,precision))/Math.pow(10,precision);
+   }
+</script>
+<div class="panel panel-primary">
+   <div class="panel-heading">
+      <label class="h3 panel-title">Artículos Pendientes</label>
+      <div class="pull-right checkbox-inline">
+         <label>
+            <input type="checkbox" id="agrupar_articulos">
+            Agrupar por artículo
+         </label>
+      </div>
+   </div>
+   <table class="table table-hover table-condensed">
+      <thead>
+         <tr>
+            <th class="text-left sortable_col" id="col_0">
+               Referencia
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_1">
+               Descripción
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_2">
+               Albarán
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_3">
+               Aplazado
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            {if="$fsc->multialmacen"}
+            <th class="text-center sortable_col" id="col_4">
+               Almacén
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            {/if}
+            <th class="text-center sortable_col" id="col_{if="$fsc->multialmacen"}5{else}4{/if}">
+               Cantidad
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_{if="$fsc->multialmacen"}6{else}5{/if}">
+               Coste
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_{if="$fsc->multialmacen"}7{else}6{/if}">
+               Precio
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+            <th class="text-center sortable_col" id="col_{if="$fsc->multialmacen"}8{else}7{/if}">
+               Coste total
+               <div class="pull-right"><span class="up-caret"></span><span class="caret"></span></div>
+            </th>
+         </tr>
+      </thead>
+      <tbody id="articulos_pendientes">
+         <tr>
+            <td colspan="{if="$fsc->multialmacen"}9{else}8{/if}">
+               <div class="text-center"><i class="fa fa-spinner fa-spin" aria-hidden="true"></i></div>
+            </td>
+         </tr>
+      </tbody>
+   </table>   
+   <div class="panel-body">
+      <div class="form-group form-horizontal">
+         <label class="col-sm-4 col-md-3 control-label">Método de almacenar pendientes:</label>
+         <div class="col-sm-8 col-md-9">
+            <form action="{$fsc->url()}" method="post">
+               <div class="input-group">
+                  <select class="form-control" name="metodo_pendientes">
+                     {loop="$fsc->metodos_pendientes"}
+                     <option value="{$value->codopcion}" {if="$value->codopcion==$fsc->proveedor_metodo->codopcion"}selected{/if}>{$value->descripcion}</option>
+                     {/loop}
+                  </select>
+                  <span class="input-group-btn">
+                     <button type="submit" class="btn btn-success" type="button">
+                        <span class="glyphicon glyphicon-floppy-disk" aria-hidden="true"></span>
+                     </button>
+                  </span>
+               </div>
+               <div class="help-block">
+                  Si desaparecen los pendientes el autogenerador de pedidos de proveedor sumará
+                  cualquier pendiente que se vuelva a pedir para que se mantenga.
+               </div>
+            </form>
+         </div>
+      </div>
+   </div>
+   <div class="panel-footer">
+      <form action="index.php?page=nueva_compra&tipo=albaran&generar=proveedor" method="post" target="_top">
+         <input type="hidden" value="{$fsc->codproveedor}" name="proveedor">
+         <button type="submit" class="btn btn-primary btn-sm">Crear albarán con pendientes</button>
+      </form>
+      <div class="help-block">
+         Los artículos que se incluyan en el albarán serán eliminados de pendientes. Se empezará a descontar pendientes por los albaranes más antiguos.
+      </div>
+   </div>
+</div>

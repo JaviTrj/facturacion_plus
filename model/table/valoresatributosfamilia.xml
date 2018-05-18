@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Document   : familias.xml
+    Author     : Carlos Garcia Gomez
+    Description:
+        Estructura de la tabla familias.
+-->
+<tabla>
+    <columna>
+        <nombre>idatributofamilia</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>idvaloratributo</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+        <defecto>nextval('valoresatributosfamilia_idvaloratributo_seq'::regclass)</defecto>
+    </columna>
+    <columna>
+        <nombre>nombre</nombre>
+        <tipo>character varying(30)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>valoresatributosfamilia_pkey</nombre>
+        <consulta>PRIMARY KEY (idvaloratributo)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_valoresatributosfamilia_atributosfamilia</nombre>
+        <consulta>FOREIGN KEY (idatributofamilia)
+            REFERENCES atributosfamilia (idatributofamilia)
+            ON DELETE CASCADE ON UPDATE RESTRICT</consulta>
+    </restriccion>
+</tabla>

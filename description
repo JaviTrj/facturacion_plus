@@ -1,0 +1,4 @@
+Plugin que añade atributos a las familias, de forma que todos sus artículos puedan almacenar información específica.
+También incluye lectura de ficheros csv, reserva de artículos para pedidos de clientes, autogeneración de pedido para
+proveedor basado en lo que falta por comprar para los pedidos de clientes y la posibilidad de marcar como pendientes 
+artículos de un pedido de proveedor.

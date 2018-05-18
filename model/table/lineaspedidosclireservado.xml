@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Document   : lineaspedidoscli.xml
+    Author     : Carlos Garcia Gomez
+    Description:
+        Estructura de la tabla lineaspedidoscli.
+-->
+<tabla>
+    <columna>
+        <nombre>stockreservado</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>idlinea</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>lineaspedidosclireservado_pkey</nombre>
+        <consulta>PRIMARY KEY (idlinea)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_lineaspedidosclireservado_lineaspedidoscli_</nombre>
+        <consulta>FOREIGN KEY (idlinea)
+            REFERENCES lineaspedidoscli (idlinea)
+            ON DELETE CASCADE ON UPDATE RESTRICT</consulta>
+    </restriccion>
+</tabla>

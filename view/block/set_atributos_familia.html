@@ -1,0 +1,109 @@
+<script type="text/javascript">
+   $(document).ready(function(event) {
+
+      // Si viene de ventas_articulos y su modal para crear
+      if($("#modal_nuevo_articulo").length) {
+         $("#atributos").addClass("hidden");
+         $("#atributos").html(
+            '<div class="no_remove form-group col-sm-12">'+
+               '<h6 class="col-sm-2 control-label">Atributos</h6>'+
+            '</div>');
+         $("#modal_nuevo_articulo select[name='codfamilia']").change(function(event) {
+            const familia = this.value;
+            const seccion_atributos = $("#atributos");
+            if(familia) {
+               seccion_atributos.removeClass('hidden');
+               get_atributos(familia, false).done(data => {
+                  if(!data.length) {
+                     seccion_atributos.addClass('hidden');
+                  } 
+               });
+            }
+            else {
+               seccion_atributos.addClass('hidden');
+            }
+         }).trigger("change");
+      }
+      else { // Si viene de buscar artículos
+         $("#atributos").addClass("row").css("margin-top","15px");
+         $("#nuevo_articulo select[name='codfamilia']").change(function(event) {
+            const familia = this.value;
+            if(familia) {
+               get_atributos(familia, true);
+            }
+         })
+
+         $("textarea[name='descripcion']").prop("required",true);
+         $("#nuevo_articulo button[type='submit']")
+            .prop("onclick",null)
+            .click(function(event, simulating = undefined) {
+               if(simulating) {
+                  return;
+               }
+
+               // Cambiamos al url para que haga el insertar el artículo desde ventas_articulos
+               // y no tener que modificar más ficheros de base para el plugin
+               if($("#nuevo_articulo > form")[0].checkValidity()) {
+                  event.preventDefault();
+                  let oldurl;
+                  if(window.nueva_venta_url) {
+                     oldurl = nueva_venta_url;
+                     nueva_venta_url = "index.php?page=ventas_articulos";
+                     new_articulo();
+                     nueva_venta_url = oldurl;
+                  }
+                  else {
+                     oldurl = nueva_compra_url;
+                     nueva_compra_url = "index.php?page=ventas_articulos";
+                     new_articulo();
+                     nueva_compra_url = oldurl;
+                  }
+               }
+               else {
+                  $(this).trigger("click", true);
+               }
+            });
+      }
+
+
+   });
+
+
+function add_atributo(horizontal, atributo, i) {
+   let html = '';
+   if(horizontal) {
+      html += '<div class="col-sm-4"><div class="form-group"><span style="display:block">'+atributo.nombre+'</span>';
+   }
+   else {
+      html += '<div class="form-group"><label class="col-sm-2 col-sm-offset-1">'+atributo.nombre+'</label><div class="col-sm-9">';
+   }
+   switch(+atributo.tipo) {
+      case 0:
+         html += '<input class="form-control" type="number" name="pordefecto_'+atributo.id+'" value="" '+(atributo.nulos ? '' : 'required')+'/>';
+         break;
+      case 1:
+         html += (atributo.nulos ? '<label class="radio-inline"><input type="radio" name="pordefecto_'+atributo.id+'" value="" required>&nbsp;Ninguno</label>' : '')+'<label class="radio-inline"><input type="radio" name="pordefecto_'+atributo.id+'" value="1" required>&nbsp;Sí</label><label class="radio-inline"><input type="radio" name="pordefecto_'+atributo.id+'" value="0">&nbsp;No</label>';
+         break;
+      case 2:
+         if(atributo.nulos) {
+            atributo.valores.unshift({cod:"", nombre:"Ninguno"});
+         }
+         const valores = atributo.valores.map(valor => '<option value="'+valor.cod+'">'+valor.nombre+'</option>').join("");
+         html += '<select class="form-control" name="pordefecto_'+atributo.id+'">'+valores+'</select>';
+   }
+   return html+'</div></div>';
+}
+function get_atributos(familia, isInHorizontalForm) {
+   $("#atributos > :not(.no_remove)").remove();
+   $("#atributos").append('<i class="fa fa-spin fa-spinner"></i>');
+   const buttons = $("#nuevo_articulo button[type='submit'], #modal_nuevo_articulo button[type='submit']");
+   buttons.prop("disabled",true);
+   return $.getJSON("index.php?page=atributos_familia&cod="+familia+"&ajax=attr", data => {
+      $("#atributos .fa-spin").remove();
+      buttons.prop("disabled",false);
+      $("#atributos").append(data.map(add_atributo.bind(null,isInHorizontalForm)));
+   });
+}
+</script>
+<div id="atributos">
+</div>

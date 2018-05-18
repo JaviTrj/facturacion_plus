@@ -1,0 +1,255 @@
+<style>
+#modal_articulos > .modal-dialog {
+   height: calc(100% - 60px);
+}
+.modal {
+   overflow-y: auto;
+}
+.glyphicon-ok-sign {
+   color: green;
+}
+.glyphicon-remove-sign {
+   color: red;
+}
+</style>
+
+<script type="text/javascript">
+const cache_atributos = {};
+
+$(document).ready(function(event) {
+   const old_buscar = buscar_articulos;
+   let valores_filtrados;
+   buscar_articulos = () => {
+      old_buscar();
+      get_valores_todavia_filtran($("#f_buscar_articulos select[name='codfamilia']").val())
+         .done(data => {
+               valores_filtrados = filtrar_valores(data) ? undefined : data;
+            });
+   };
+
+   $("#f_buscar_articulos select[name='codfamilia']").change(function(event) {
+      if(this.value) {
+         $("#filtering").prop("disabled", false);
+         get_atributos_filtering(this.value, false)
+            .done(data => {
+               add_filtering_atributos(data);
+
+               if(valores_filtrados) {
+                  filtrar_valores(valores_filtrados);
+                  valores_filtrados = undefined;
+               }
+
+               set_ul_max_height($("#modal_filtros_atributos_familia"));
+
+            });
+      }
+      else {
+         $("#filtering").prop("disabled", true);   
+         $("#filtering_atributos").html("");      
+      }
+   }).trigger("change")
+
+
+   $("#modal_filtros_atributos_familia .close, #b_filter").click(function() {
+      $("#modal_filtros_atributos_familia").modal("hide");
+   })
+
+   $("#modal_filtros_atributos_familia").on("hide.bs.modal", function() {
+      buscar_articulos();
+   })
+
+   $("#modal_filtros_atributos_familia").on("shown.bs.modal", function() {
+      set_ul_max_height($(this));
+
+   })
+})
+
+function add_filtering_atributo(atributo, i) {
+   let html = '<div class="form-group"><label class="col-sm-2 control-label">'+atributo.nombre+'</label>';
+   switch(+atributo.tipo) {
+      case 0:
+         html += '<div class="col-sm-5 text-right">'+
+                     '<input class="form-control" type="number" name="b_'+atributo.id+'_min" placeholder="Mínimo">'+
+                  '</div>'+
+                  '<div class="col-sm-5 text-right">'+
+                     '<input class="form-control" type="number" name="b_'+atributo.id+'_max" placeholder="Máximo">'+
+                  '</div>';
+         break;
+      case 1:
+         const oneRadio = (valor) => '<label class="radio-inline"><input type="radio" name="b_'+atributo.id+'" value="'+valor.cod+'" '+ (valor.checked ? 'checked' : '') +'>&nbsp;'+valor.nombre+'</label>';
+         const options = [{cod: "", nombre: "Todos", checked: true},{cod: "TRUE", nombre: "Sí"},{cod: "FALSE", nombre: "No"}];
+         if(atributo.nulos) {
+            options.push({cod: "-1", nombre: "Solo nulos"});
+         }
+         html += '<div class="col-sm-10">' + options.map(oneRadio).join("") + "</div>";
+         break;
+      case 2:
+         const valores = [{cod: "", nombre: "Todos"}].concat(atributo.nulos ? [{cod:"-1", nombre:"Solo nulos"}] : [], atributo.valores)
+            .map(valor => 
+               '<li>'+
+                  '<a href="#" data-selected="'+(valor.cod ? "false" : "true")+'" data-value="'+valor.cod+'">'+
+                     valor.nombre+
+                     '<span class="glyphicon '+(valor.cod ? "glyphicon-remove-sign" : "glyphicon-ok-sign")+' pull-right" aria-hidden="true"></span>'+
+                  '</a>'+
+               '</li>')
+            .join("");
+         html += 
+            '<div class="col-sm-10">'+
+               '<div class="dropdown">'+
+                  '<button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" style="width:100%">'+
+                     '<input type="hidden" name="b_'+atributo.id+'">'+
+                     '<input type="text" value="Todos" readonly style="border:none;background:inherit;cursor:inherit;width:100%;">'+
+                     '<span class="caret"></span>'+
+                  '</button>'+
+                  '<ul class="dropdown-menu" style="width:100%;overflow-y:scroll" >'+valores+'</ul>'+
+               '</div>'+
+            '</div>';
+         
+   }
+   return html+'</div>';
+}
+function get_atributos_filtering(familia) {
+   if(cache_atributos[familia]) {
+      return jQuery.Deferred().resolve(cache_atributos[familia])
+   }
+
+   $("#filtering_atributos").html('<div class="text-center"><label><i class="fa fa-spinner fa-spin" aria-hidden="true"></i></label></div>');
+   return $.getJSON("index.php?page=atributos_familia&cod="+familia+"&ajax=attr", function(data) {
+      cache_atributos[familia] = data;
+   });
+}
+
+function add_filtering_atributos(data) {
+   if(!data.length) {
+      $("#filtering_atributos").html("<span>La familia no tiene ningún atributo</span>");
+   }
+   else {
+      $("#filtering_atributos").html(data.map(add_filtering_atributo));
+
+      $("#filtering_atributos").change(function() {
+         buscar_articulos();
+      })
+
+      // Añadir evento de click para cada opción de forma que se vayan acumulando en los inputs
+      // las opciones seleccionadas
+      $("#filtering_atributos a").click(function(event) {
+         const thisOne = $(this);
+         const value = thisOne.data("value");
+         const selected = thisOne.data("selected");
+         const button = thisOne.parent().parent().prev();
+         const cod_input = button.children("input[type='hidden']");
+         const nombres_input = button.children("input[type='text']");
+         if(!value || value === -1) {
+            if(selected) {
+               return;
+            }
+            else {
+               nombres_input.val(thisOne.text());
+               cod_input.val(value);
+               thisOne.parent().parent().find("a").data("selected", false).children().removeClass("glyphicon-ok-sign").addClass("glyphicon-remove-sign");
+               thisOne.data("selected", true).children().addClass("glyphicon-ok-sign").removeClass("glyphicon-remove-sign");
+            }
+         }
+         else {
+            if(selected) {
+               // Eliminamos el nombre y código de los inputs
+               const nombre = thisOne.text();
+               nombres_input.val(nombres_input.val().split(", ").filter(a => a !== nombre).join(", "));
+               cod_input.val(cod_input.val().split(",").filter(a => a != value).join(","));
+
+               thisOne.data("selected", false).children().removeClass("glyphicon-ok-sign").addClass("glyphicon-remove-sign");
+
+               // Si es el último normal seleccionar todo
+               if(!cod_input.val()) {
+                  nombres_input.val("Todos");
+                  thisOne.parent().parent().find("a[data-value='']").data("selected", true).children().addClass("glyphicon-ok-sign").removeClass("glyphicon-remove-sign");
+               }
+            }
+            else {
+               // Añadimos el nombre a los inputs
+               if(cod_input.val() === "") {
+                  nombres_input.val(thisOne.text());
+                  cod_input.val(value);
+               }
+               else {
+                  nombres_input.val(nombres_input.val() + ", " + thisOne.text());
+                  cod_input.val(cod_input.val() + "," + value);
+               }
+               thisOne.data("selected", true).children().addClass("glyphicon-ok-sign").removeClass("glyphicon-remove-sign");
+
+               // Deseleccionar todos y nulo
+               thisOne.parent().parent().find("a[data-value=''],a[data-value='-1']").data("selected", false).children().removeClass("glyphicon-ok-sign").addClass("glyphicon-remove-sign");                  
+            }
+         }
+
+         buscar_articulos();
+      });
+   }
+}
+function get_valores_todavia_filtran(familia) {
+   if(!familia) {
+      return jQuery.Deferred().resolve(null);
+   }
+
+   return $.getJSON("index.php?page=atributos_familia&cod="+familia+"&ajax=valores", $("form[name=f_buscar_articulos]").serialize());
+}
+function filtrar_valores(criteria) {
+   if(!criteria) {
+      return;
+   }
+
+   const inputs = $("#filtering_atributos > .form-group");
+
+   if(!inputs.length) {
+      return;
+   }
+
+   Object.keys(criteria).forEach(id => {
+      inputs
+         .find("input[name='b_"+id+"']").parent().next().find("a")
+         .removeClass("hidden")
+         .filter(function() {
+            const value = $(this).data("value");
+            return value !== "" && criteria[id].valores.indexOf(value.toString()) < 0;
+         })
+         .addClass("hidden")
+         .each(function() {
+            if($(this).data("selected")) {
+               $(this).trigger("click");
+            }
+         });
+   });
+
+   return true;
+}
+
+function set_ul_max_height(modal) {
+   modal.find("ul").each(function() {
+      const thisOne = $(this);
+      thisOne.css("max-height", $(window).height() - thisOne.parent().offset().top - thisOne.parent().height() - 30);
+   });
+}
+
+</script>
+
+<button id="filtering" class="btn btn-primary" type="button" data-toggle="modal" data-target="#modal_filtros_atributos_familia" title="Filtrar por atributos de familia, es necesario especificar la familia">
+   <i class="fa fa-filter" aria-hidden="true"></i>
+</button>
+
+<div class="modal form-horizontal" id="modal_filtros_atributos_familia">
+   <div class="modal-dialog">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" aria-hidden="true">&times;</button>            
+            <h4 class="modal-title">Filtros de atributos de familia</h4>
+         </div>
+         <div class="modal-body" id="filtering_atributos">
+         </div>
+         <div class="modal-footer">
+            <button id="b_filter" type="button" class="btn btn-sm btn-primary">
+               Buscar
+            </button>
+         </div>
+      </div>
+   </div>
+</div>

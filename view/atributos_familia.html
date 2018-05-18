@@ -1,0 +1,333 @@
+{include="header2"}
+
+<script type="text/javascript">
+$(document).ready(function(event) {
+
+   $("#b_nuevo_atributo").one("click",function(event) {
+      const row = $(this).parent().parent();
+      row.children("td").removeClass("hidden");
+      $(this).parent().addClass("hidden");
+      $("#select_tipo_atributo").change(on_change_nuevo_atributo_tipo).trigger('change');
+
+      // Submit con ajax para después poder redirigir desde el iframe
+      row.find("[type='submit']").click(function(event) {
+         event.preventDefault();
+         $("[type='submit']").prop("disabled", true);
+         $.ajax({
+            url: "{$fsc->url()}",
+            type: 'POST',
+            dataType: 'text',
+            data: $("#f_nuevo_atributo").serialize(),
+            success: () => window.top.location.href = "{$fsc->parent_url()}"
+         })
+      })
+   });
+
+   make_sortable();
+
+   $("#permitir_nulos").change(on_change_permitir_nulos);
+});
+
+function _(name, idatributo = undefined) {
+   switch(name) {
+      case "lista":
+         return idatributo ? "lista_"+idatributo : "lista_atributos_valores";
+      case "add":
+         return idatributo ? "add_valor_"+idatributo : "add_valor_atributo";
+      case "form":
+         return idatributo ? 'f_modificar_'+idatributo : "f_nuevo_atributo";
+      case "nulos":
+         return idatributo ? 'permitir_nulos_'+idatributo : "permitir_nulos";
+
+   }
+}
+
+function make_sortable(id = undefined) {
+   $("#"+_("lista", id)).sortable({
+      items: "> div:not(.fixed)",
+      cancel: "input[type='text']",
+      update: () => rearrange_names_lista(id)
+   }).disableSelection();
+}
+
+function on_change_nuevo_atributo_tipo(event, id = undefined, tipo = undefined) {
+   // Solo mostrar la lista de valores si es de tipo valores
+   if(!tipo) {
+      tipo = $('#select_tipo_atributo').val();
+   }
+   switch(tipo) {
+      case 2:
+      case "values":
+         $("#"+_("lista", id)).html('<a class="list-group-item list-group-item-success" id="'+ _("add",id) +'"><span class="glyphicon glyphicon-plus"></span>&nbsp;Nuevo valor</a><input type="hidden" value="" name="pordefecto" form="'+ _("form",id) +'">');
+         const adder = $("#"+_("add",id));
+         adder.click({ id }, add_new_valor);
+         // Solamente se añade un valor inicial si es un atributo nuevo
+         if(!id) {
+            adder.trigger('click');
+         }
+         $("#"+_("lista", id)).next().removeClass("hidden");
+         break;
+      case 0:
+      case "number":
+         $("#"+_("lista", id)).html('<input class="form-control" type="number" name="pordefecto" pattern="\d+"/ form="'+ _("form",id) +'" '+ (id ? 'required' : '') +'>');
+         $("#"+_("lista", id)).next().addClass("hidden");
+         break;
+      case 1:
+      case "boolean":
+         $("#"+_("lista", id)).html('<label class="radio-inline"><input type="radio" name="pordefecto" value="1" required form="'+ _("form",id) +'">&nbsp;Sí</label><label class="radio-inline"><input type="radio" name="pordefecto" value="0" checked form="'+ _("form",id) +'">&nbsp;No</label>');
+         $("#"+_("lista", id)).next().addClass("hidden");
+         break;
+   }
+   $("#"+_("nulos", id)).trigger('change');
+}
+function add_new_valor(event, valor=undefined) {
+   let { id } = event.data;
+   const numero_atributo = $("#"+_("lista", id)+">div:not(.fixed)").length;
+   // Si es el primero lo ponemos como el seleccionado
+   if(!numero_atributo) {
+      $("#"+_("lista", id)+" input:last-child").val('atributo_valor_nombre'+numero_atributo+( valor ? "_"+valor.id : "" ))
+   }
+   $(this).before('<div class="input-group" style="padding-bottom:10px;"><input class="form-control" type="text" name="atributo_valor_nombre'+numero_atributo+( valor ? "_"+valor.id : "" )+'" required maxlength="30" '+ (valor ? 'value="'+valor.value+'" data-id="'+ valor.id +'"' : '') +' form="'+ _("form", id) + '"/><div class="input-group-btn"><button type="button" class="btn btn-default"><i class="fa '+(numero_atributo ? 'fa-star-o' : 'fa-star')+'" aria-hidden="true"></i></button><button class="btn btn-danger" type="button"><i class="fa fa-trash" aria-hidden="true"></i></button></div></div>');
+   // Añadir el controlador del valor seleccionado por defecto
+   $(this).prev().find(".btn-default").click({ id }, on_click_marcar_pordefecto);
+   // Eliminar un valor al hacer click 
+   $(this).prev().find(".btn-danger").click(function(event) {
+         // Si es el último cancelarlo
+         if($("#"+_("lista", id)+">div:not(.fixed)").length === 1) {
+            return;
+         }
+
+         const isSelected = $(this).prev().children().hasClass('fa-star');
+
+         $(this).parent().parent().remove();
+
+         rearrange_names_lista(id);
+
+         // Si el que estaba seleccionado es el que eliminamos tenemos que cambiarlo
+         if(isSelected) {
+            $("#"+_("lista", id)+" div:first-child .btn-default").trigger('click');
+         }
+   });
+}
+function rearrange_names_lista(id = undefined) {
+   $("#"+_("lista", id)+" > div:not(.fixed) > input").each(function(i) {
+      const idvalor = $(this).data("id");
+      const name = "atributo_valor_nombre"+i+(idvalor ? "_"+idvalor : "");
+      $(this).attr('name',name);
+      if($(this).next().find(".btn-default > i").hasClass("fa-star")) {
+         $("#"+_("lista", id)+" input:last-child").val(name);
+      }
+   });
+}
+function on_change_permitir_nulos(event) {
+   let { id, tipo } = event.data || {};
+   const permitir_nulos = $("#"+_("nulos", id)).prop("checked");
+   // Si es modificar y no es valores, solamente cambiar el estado de los inputs
+   if(id && tipo !== 2) {
+      if(permitir_nulos) {
+         $("#"+_("lista", id) + " input").prop("disabled",true);
+      } else {
+         $("#"+_("lista", id) + " input").prop("disabled",false);
+      }
+      return;
+   }
+
+   if(!tipo) {
+      tipo = $('#select_tipo_atributo').val();
+   }
+   switch(tipo) {
+      case 2:
+      case "values":
+         if(permitir_nulos) {
+            $("#"+_("lista", id)).prepend('<div class="input-group fixed" style="padding-bottom:10px;"><input class="form-control" type="text" value="Ninguno" readonly/><div class="input-group-btn"><button type="button" class="btn btn-default"><i class="fa fa-star-o" aria-hidden="true"></i></button></div></div>');
+            $("#"+_("lista", id)+" .fixed .btn-default").click({ id }, on_click_marcar_pordefecto);
+         } else {
+            $("#"+_("lista", id)+" > .fixed").remove();
+            // Si el que estaba seleccionado es el ninguno tenemos que cambiarlo
+            if(!$("#"+_("lista", id)+" input[type='hidden']").val()) {
+               $("#"+_("lista", id)+" div:first-child .btn-default").trigger('click');
+            }
+         }
+         break;
+      case 1:
+      case 'boolean':
+         if(permitir_nulos) {
+            $("#"+_("lista", id)).append('<label class="radio-inline ninguno"><input type="radio" name="pordefecto" value="" required form="'+ _("form",id) +'">&nbsp;Ninguno</label>');
+         } else {
+            $("#"+_("lista", id)+" > .ninguno").remove();
+         }
+         break;
+      case 0:
+      case 'number':
+         if(permitir_nulos) {
+            $("#"+_("lista", id)+" > input").prop("required", false);
+         } else {
+            $("#"+_("lista", id)+" > input").prop("required", true);
+         }
+   }
+}
+function on_click_marcar_pordefecto(event) {
+   $("#"+_("lista", event.data.id)+" .btn-default > i").removeClass("fa-star").addClass("fa-star-o");
+   $(this).children().removeClass("fa-star-o").addClass("fa-star");
+   $("#"+_("lista", event.data.id)+" input:last-child").val($(this).parent().prev().attr("name"));
+} 
+function modificar_atributo(row, idatributo, tipo) {
+   // Cambiamos el botón de modificar por el de guardar
+   const buttons = $("#row_"+ row +" td:last-child");
+   buttons.children(".btn-primary").remove();
+   buttons.prepend('<button class="btn btn-success btn-sm" type="submit" form="'+_("form",idatributo)+'"><span class="glyphicon glyphicon-floppy-disk" aria-hidden="true"></span></button>');
+   // Submit con ajax para después poder redirigir desde el iframe
+   buttons.children("[type='submit']").click(function(event) {
+      const form = $("#"+_("form",idatributo));
+
+      if(form.get(0).checkValidity()) {
+         event.preventDefault();
+      }
+      else {
+         return;
+      }
+      
+      $(this).prop("disabled", true);
+      $.ajax({
+         url: "{$fsc->url()}&modify="+idatributo,
+         type: 'POST',
+         dataType: 'text',
+         data: form.serialize(),
+         success: () => window.top.location.href = "{$fsc->parent_url()}",
+         error: (response) => {
+            $(this).prop("disabled", false);
+            bootbox.alert({
+               message: response.responseText ? response.responseText : 'Se ha producido un error al modificar el atributo.',
+               title: "<b>Atención</b>"
+            });
+         }
+      })
+   })
+
+   // Cambiar nombre a input
+   const name = $("#row_"+ row +" td:nth-child(2)");
+   name.attr("colspan","2");
+   name.html('<input class="form-control" type="text" name="nombre" form="'+_("form",idatributo)+'" required value="'+ name.text() +'" maxlength="20">');
+   $("#row_"+ row +" td:nth-child(3)").remove();
+   
+   // Cambiar permitir nulos a checkbox
+   const permitir = $("#row_"+ row +" td:nth-child(4)");
+   const permitia = !(permitir.text().trim() == "No");
+   permitir.html('<input type="checkbox" name="permitirnulo" value="TRUE" form="'+_("form",idatributo)+'" id="'+ _("nulos",idatributo) +'" ' + (permitia ? "checked" : "") + '>');
+
+   // Cambiar valores
+   const valoresJQuery = $("#row_"+ row +" td:nth-child(5)");
+   if(tipo === 2) {
+      // Obtenemos los valores y sus ids
+      var valores = valoresJQuery.children(":not(.hidden)").text().split(",");
+      var idvalores = valoresJQuery.children(".hidden").text().split(",");
+   }
+
+   valoresJQuery.html('<ul class="list-group" id="'+_("lista",idatributo)+'"></ul>');
+   // Ponemos el contenido adecuado en la columna de valores
+   if(tipo === 2 || permitia) {
+      on_change_nuevo_atributo_tipo(undefined, idatributo, tipo);
+      $("#"+_("nulos",idatributo)).change({ id: idatributo, tipo }, on_change_permitir_nulos).trigger("change");   
+      $("#"+_("lista", idatributo)).after('<span class="help-block">Introduzca o marque el valor que se utilizará para los artículos que tengan que cambiar porque ya no se acepta su nulo o su valor fue eliminado.</span>');
+   }
+
+   if(tipo === 2) {
+      // Inicializamos la lista con lo valores existentes
+      valores.forEach((valor,i) => $("#"+_("add",idatributo)).trigger('click',{id:idvalores[i],value:valor}));
+      make_sortable(idatributo);
+   }
+}
+function eliminar_atributo(idatributofamilia, nombre, numero_articulos, url) {
+   event.preventDefault();
+   bootbox.confirm({
+      title: '<b>¿Estas seguro de que deseas eliminar el atributo '+nombre+'?</b>',
+      message: numero_articulos+' artículo/s perderá/n la información del atributo.',
+      callback: function(result) {
+         if (result) {
+            // Submit con ajax para después poder redirigir desde el iframe
+            $("[type='submit']").prop("disabled", true);
+            $.ajax({
+               url: "{$fsc->url()}&delete="+idatributofamilia,
+               dataType: 'text',
+               success: () => window.top.location.href = "{$fsc->parent_url()}",
+               error: response => bootbox.alert(response.responseText)
+            })
+         }
+      }
+   });
+};
+</script>
+
+<div class="container-fluid">
+   <div class="row">
+      <div class="table-responsive">
+         <table class="table table-hover">
+            <thead>
+               <tr>
+                  <th>Nombre</th>
+                  <th>Origen</th>
+                  <th>Tipo</th>
+                  <th style="width:120px">¿Permite nulos?</th>
+                  <th>Valores</th>
+                  <th style="width:100px"></th>
+               </tr>
+            </thead>
+            {loop="$fsc->atributos"}
+            <tr {if="$value->codfamilia != $fsc->codfamilia"}class="info"{/if} id="row_{$counter}">
+               {if="$value->codfamilia == $fsc->codfamilia"}
+               <form action='{$fsc->url()}&modify={$value->idatributofamilia}' method='post' id="f_modificar_{$value->idatributofamilia}"></form>           
+               {/if}    
+               <td>{$value->nombre}</td>
+               <td>
+                  {if="$value->codfamilia != $fsc->codfamilia"}
+                        <a href="index.php?page=ventas_familia&cod={$value->codfamilia}">{$value->familia}</a>
+                  {else}
+                        ...
+                  {/if}
+               </td>
+               <td>{$value->get_tipo_name($value->tipo)}</td>
+               <td>{if="$value->permitirnulo"}Sí{else}No{/if} </td>
+               <td>
+                  {if="$value->tipo==2"}
+                     <span>{function="implode(",",array_map(function($v) { return $v->nombre; }, $value->valores))"}</span>
+                     <span class="hidden">{function="implode(",",array_map(function($v) { return $v->idvaloratributo; }, $value->valores))"}</span>
+                  {else}
+                  ...
+                  {/if}
+               </td>
+               <td class="text-right">
+                  {if="$value->codfamilia == $fsc->codfamilia"}
+                  <button class="btn btn-primary btn-sm" type="button" onclick="modificar_atributo({$counter},{$value->idatributofamilia},{$value->tipo})"><span class="glyphicon glyphicon-pencil" aria-hidden="true"></span></button>                  
+                  {/if}
+                  <button class="btn btn-danger btn-sm" type="button" onclick="eliminar_atributo({$value->idatributofamilia},'{$value->nombre}',{$fsc->num_articulos},'{$fsc->url()}')"><i class="fa fa-trash" aria-hidden="true"></i></button>
+               </td>
+            </tr>
+            {/loop}
+            <tr>
+               <td colspan="6"><button id="b_nuevo_atributo" type="button" class="btn btn-success" style="width: 100%"><span class="glyphicon glyphicon-plus"></span>&nbsp;Añadir un nuevo atributo a la familia</button></td>
+               <form action='{$fsc->url()}' method='post' id="f_nuevo_atributo"></form>
+               <td colspan="2" class="hidden">
+                  <input class="form-control" type="text" name="nombre" form="f_nuevo_atributo" required maxlength="20">
+               </td>
+               <td class="hidden">
+                  <select class="form-control" name="tipo" id="select_tipo_atributo" form="f_nuevo_atributo">
+                     <option value="number">Númerico</option>
+                     <option value="boolean">Binario</option>
+                     <option value="values">Valores definidos</option>
+                  </select>
+               </td class="hidden">
+               <td class="hidden"><input type="checkbox" name="permitirnulo" value="TRUE" form="f_nuevo_atributo" id="permitir_nulos" checked></td>
+               <td class="hidden">
+                  <ul class="list-group" id="lista_atributos_valores">
+                  </ul>
+                  <span class="help-block">Puede arrastrar los valores para ordenarlos.</span>
+                  <span class="help-block">Introduzca o marque el valor que se utilizará para todo artículo ya existente, que actualmente son {$fsc->num_articulos}.</span>
+               </td>
+               <td class="text-right hidden">
+                  <button class="btn btn-success btn-sm" type="submit" form="f_nuevo_atributo"><span class="glyphicon glyphicon-floppy-disk" aria-hidden="true"></span></button>                                    
+               </td>
+            </tr>
+         </table>
+      </div>
+   </div>
+</div>

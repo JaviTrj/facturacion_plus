@@ -1,0 +1,68 @@
+<script type="text/javascript">
+   $(document).ready(function() {
+      const caret = $("#titulo_comprobar span");
+      $("#contenido_comprobar").on("show.bs.collapse",() => {
+         {if="$fsc->proveedor_s->get_metodo_pendientes() && $fsc->proveedor_s->get_metodo_pendientes()->codopcion != 'nopermitir'"}         
+         $("#contenido_comprobar input[type='checkbox']").attr("disabled",false);
+         {else}
+         $("#contenido_comprobar input[type='checkbox']").prop("checked",false);         
+         {/if}
+         $("#contenido_comprobar input:not([type='checkbox'])").attr("disabled",false);
+         caret.addClass("right-caret").removeClass("caret");
+      });
+      $("#contenido_comprobar").on("hide.bs.collapse",() => {
+         $("#contenido_comprobar input").attr("disabled",true);
+         caret.removeClass("right-caret").addClass("caret");
+      });
+   });
+</script>
+<style>
+.right-caret {
+    border-bottom: 4px solid transparent;
+    border-top: 4px solid transparent;
+    border-left: 4px solid #FFFFFF;
+    display: inline-block;
+    height: 0;
+    width: 0;
+}
+</style>
+<div class="panel panel-default panel-primary">
+   <div class="panel-heading" id="titulo_comprobar" data-toggle="collapse" data-target="#contenido_comprobar">
+      <label>Comprobar los artículos recibidos</label>
+      <div class="pull-right"><span class="caret"></span></div>
+   </div>
+   <div class="collapse" id="contenido_comprobar">
+      <input type="hidden" name="comprobado" value="y" disabled/>
+      <table class="table table-hover table-condensed">
+         <thead>
+            <tr>
+               <th class="text-left">Referencia</th>
+               <th class="text-left">Descripción</th>
+               <th class="text-right">Recibidos</th>
+            </tr>
+         </thead>
+         <tbody>
+            {loop="$lineas"}
+            <tr>
+               <td class="text-left">{$value->referencia}</td>
+               <td class="text-left">{$value->descripcion}</td>
+               <td class="text-right">
+                  <input name="recibido_{$value->idlinea}" dir="rtl" type="number" value="0" min="0" max="{$value->cantidad}" disabled>
+                  /{$value->cantidad}
+               </td>
+            </tr>
+            {/loop}
+         </tbody>
+      </table>
+      <div class="panel-footer">
+         <div class="checkbox">
+            <label>
+               <input type="checkbox" name="crear_pendientes" value="TRUE" checked="checked" disabled/>
+               Guardar los no entregados como pendientes
+            </label>
+         </div>
+      </div>
+   </div>
+   
+</div>
+

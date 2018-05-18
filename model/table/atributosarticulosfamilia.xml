@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Document   : familias.xml
+    Author     : Carlos Garcia Gomez
+    Description:
+        Estructura de la tabla familias.
+-->
+<tabla>
+    <columna>
+        <nombre>idatributofamilia</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>valor</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>atributosarticulosfamilia_pkey</nombre>
+        <consulta>PRIMARY KEY (idatributofamilia,referencia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_atributosarticulosfamilia_atributosfamilia</nombre>
+        <consulta>FOREIGN KEY (idatributofamilia)
+            REFERENCES atributosfamilia (idatributofamilia)
+            ON DELETE CASCADE ON UPDATE RESTRICT</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_atributosarticulosfamilia_referencia</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

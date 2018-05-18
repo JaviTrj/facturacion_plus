@@ -1,0 +1,102 @@
+<script type="text/javascript">
+   function cargar_articulos(url, mensaje_vacio, isPendienteProveedor) {
+      return $.getJSON(url,function(data) {
+         $("#lineas_doc>*").remove();
+         if(data.length) {
+            data.forEach(a => {
+               add_articulo(a.referencia,Base64.encode(a.descripcion),a.coste,a.dto,a.codimpuesto,a.pendientes);
+               if(a.pisar) {
+                  $("#lineas_doc>tr:last-child>td:first-child").prepend("<input type='hidden' value='"+a.pisar+"' name='pisar_"+(numlineas-1)+"'>");
+               }
+            });
+            if(isPendienteProveedor && !$("#lineas > input[name='pendientes_proveedor']").length) {
+               $("#lineas").prepend("<input type='hidden' value='true' name='pendientes_proveedor'>");
+            }
+         }
+         else {
+            bootbox.alert(mensaje_vacio);
+            throw new Error(mensaje_vacio);
+         }
+      }).done(() => bloquear_articulos(isPendienteProveedor));
+   }
+   function solicitar_articulos_pendientes_clientes(almacen) {
+      const proveedor = $("#f_new_albaran>input[name='proveedor']").val();
+      const divisa = $("#coddivisa").val();
+      const url = nueva_compra_url+"&generar_pedido="+proveedor+"&coddivisa="+divisa+(almacen ? "&codalmacen="+almacen : "");
+      return cargar_articulos(url,"No hay artículos pendientes de comprar", false);
+   }
+   function bloquear_articulos(isPendienteProveedor) {
+      
+      if(isPendienteProveedor) {
+         $("#lineas_doc td:nth-child(3) input").each(function() {
+            $(this).prop("max", this.value);
+         });
+      }
+      else {
+         $("#lineas_doc td:nth-child(3) input").prop("readonly",true);
+         $("#lineas_doc td:nth-child(4) button").prop("disabled",true);
+      }
+      $("#i_new_line").prop("disabled",true);
+      $(".info td>a").attr("onclick",null);
+      // Bloquear el tipo a albarán si es de proveedor o a pedido si es para pendientes de cliente
+      if(isPendienteProveedor) {
+         $("#modal_guardar input[type='radio'][value='albaran']").prop("checked",true);
+         $("#modal_guardar input[type='radio']:not([value='albaran'])").prop("disabled",true);
+      }
+      else {
+         $("#modal_guardar input[type='radio'][value='pedido']").prop("checked",true);
+         $("#modal_guardar input[type='radio']:not([value='pedido'])").prop("disabled",true);
+      }
+   }
+   $(document).ready(function() {
+      $("#b_generar_todos").click(function(event) {
+         solicitar_articulos_pendientes_clientes();
+         $("#f_new_albaran").prepend("<input id='set_todos_almacenes' type='hidden' value='1' name='todos_almacenes'>");
+      });
+      $("#b_generar_este").click(function(event) {
+         const codalmacen = $("#codalmacen").val();
+         solicitar_articulos_pendientes_clientes(codalmacen);
+         $("#set_todos_almacenes").remove();
+      });
+      $("#b_generar_pendientes").click(function(event) {
+         const proveedor = $("#f_new_albaran>input[name='proveedor']").val();
+         cargar_articulos("index.php?page=compras_pendientes_proveedor&cod="+proveedor+"&ajax=1","No hay artículos pendientes en el proveedor", true);
+         $("#set_todos_almacenes").remove();
+      });
+
+      // Miramos la url para ver si fue solicitado rellenar con los pendientes del proveedor
+      if(window.location.href.match(/[\?&]generar=([^&#]*)/)) {
+         $("#b_generar_pendientes").trigger("click");
+      }
+   });
+</script>
+
+{if="$fsc->multi_almacen"}
+<div class="btn-group dropup">
+   <button type="button" class="btn btn-sm btn-success dropdown-toggle" title="Añadir los artículos que están pendientes de comprar" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+      <i class="fa fa-cogs" aria-hidden="true"></i>
+      Generar
+      <span class="caret"></span>
+   </button>
+   <ul class="dropdown-menu dropdown-menu-right">
+      <li class="dropdown-header" style="color:lawngreen">Pedido con pendientes de comprar en pedidos de clientes</li>
+      <li><a href="#" id="b_generar_este">Solo usar el almacen seleccionado para stock, pedidos de clientes y pedidos de proveedores</a></li>
+      <li><a href="#" id="b_generar_todos">Tener en cuenta el stock y los pedidos para todos los almacenes</a></li>
+      <li role="separator" class="divider"></li>
+      <li><a href="#" id="b_generar_pendientes">Albarán con pendientes de recibir desde el proveedor</a></li>
+   </ul>
+</div>
+{else}
+<div class="btn-group dropup">
+      <button type="button" class="btn btn-sm btn-success dropdown-toggle" title="Añadir los artículos que están pendientes de comprar" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+         <i class="fa fa-cogs" aria-hidden="true"></i>
+         Generar
+         <span class="caret"></span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-right">
+         <li><a href="#" id="b_generar_este">Pedido con pendientes de comprar en pedidos de clientes</a></li>
+         <li role="separator" class="divider"></li>
+         <li><a href="#" id="b_generar_pendientes">Albarán con pendientes de recibir desde el proveedor</a></li>
+      </ul>
+   </div>
+{/if}
